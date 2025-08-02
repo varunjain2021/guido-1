@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>guido.deeplink</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>guido</string>
+			</array>
+		</dict>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>location</string>
+	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Guido uses your location to provide relevant local recommendations and suggestions based on where you are.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Guido uses your location to provide relevant local recommendations and suggestions based on where you are.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Guido can check your calendar to help plan travel activities around your schedule.</string>
+</dict>
+</plist>

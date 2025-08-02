@@ -1,0 +1,53 @@
+# Uncomment the next line to define a global platform for your project
+platform :ios, '16.0'
+
+target 'guido-1' do
+  # Comment the next line if you don't want to use dynamic frameworks
+  use_frameworks!
+
+  # Pods for guido-1
+  
+  # ==== VOICE ACTIVITY DETECTION (VAD) ====
+  # Choose ONE of the following VAD solutions:
+  
+  # 🥇 RECOMMENDED: Silero VAD (AI-powered, most accurate)
+  # Uncomment to use Silero VAD for best accuracy:
+  # pod 'Silero-VAD-for-iOS'
+  
+  # 🥈 ALTERNATIVE: WebRTC VAD (industry standard, lightweight)  
+  # Uncomment to use WebRTC VAD for lighter footprint:
+  # pod 'VoiceActivityDetector'
+  
+  # 🥉 COMMERCIAL: Picovoice Cobra VAD (requires API key)
+  # Uncomment to use Picovoice Cobra VAD:
+  # pod 'Cobra-iOS'
+  
+  # ==== INSTRUCTIONS ====
+  # 1. Uncomment ONE of the VAD pods above
+  # 2. Run: pod install
+  # 3. In AudioManager.swift, uncomment the corresponding import and initialization code
+  # 4. Build and test!
+  #
+  # For best results, we recommend starting with Silero VAD.
+  # If you need faster initialization, try WebRTC VAD.
+
+  target 'guido-1Tests' do
+    inherit! :search_paths
+    # Pods for testing
+  end
+
+  target 'guido-1UITests' do
+    # Pods for testing
+  end
+
+end
+
+# Post-install script to ensure proper deployment targets
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
+      config.build_settings['CODE_SIGN_IDENTITY'] = ''
+    end
+  end
+end 

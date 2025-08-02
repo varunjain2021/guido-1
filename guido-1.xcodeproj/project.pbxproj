@@ -6,6 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A55C0A1ECD91D1DC28C4D1A9 /* Pods_guido_1Tests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2F02A2AABBBF0F950A622CD5 /* Pods_guido_1Tests.framework */; };
+		AADA7721B01B4C3C182EA27C /* Pods_guido_1_guido_1UITests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 275F5B9FE2D897C8397303CA /* Pods_guido_1_guido_1UITests.framework */; };
+		E49A9E3D4C746030800DECC7 /* Pods_guido_1.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 309DA5C32707E91FA7380BCA /* Pods_guido_1.framework */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		D47B0FF82E35DB7D0076F1FF /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -23,15 +29,64 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		D4DD278C2E3A81D1009E2E8C /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		07364CFB7CAE9F1D6EFFB859 /* Pods-guido-1.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-guido-1.release.xcconfig"; path = "Target Support Files/Pods-guido-1/Pods-guido-1.release.xcconfig"; sourceTree = "<group>"; };
+		226D1273819235147558ADDF /* Pods-guido-1Tests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-guido-1Tests.debug.xcconfig"; path = "Target Support Files/Pods-guido-1Tests/Pods-guido-1Tests.debug.xcconfig"; sourceTree = "<group>"; };
+		275F5B9FE2D897C8397303CA /* Pods_guido_1_guido_1UITests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_guido_1_guido_1UITests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		2F02A2AABBBF0F950A622CD5 /* Pods_guido_1Tests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_guido_1Tests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		309DA5C32707E91FA7380BCA /* Pods_guido_1.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_guido_1.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		527CA6ECBC117D5796B29A7E /* Pods-guido-1Tests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-guido-1Tests.release.xcconfig"; path = "Target Support Files/Pods-guido-1Tests/Pods-guido-1Tests.release.xcconfig"; sourceTree = "<group>"; };
+		CC21CDE5EE9D7B8309D18428 /* Pods-guido-1.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-guido-1.debug.xcconfig"; path = "Target Support Files/Pods-guido-1/Pods-guido-1.debug.xcconfig"; sourceTree = "<group>"; };
 		D47B0FEA2E35DB7B0076F1FF /* guido-1.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "guido-1.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D47B0FF72E35DB7D0076F1FF /* guido-1Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "guido-1Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D47B10012E35DB7D0076F1FF /* guido-1UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "guido-1UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		EF7B2F6ACEC73E005E4911A4 /* Pods-guido-1-guido-1UITests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-guido-1-guido-1UITests.release.xcconfig"; path = "Target Support Files/Pods-guido-1-guido-1UITests/Pods-guido-1-guido-1UITests.release.xcconfig"; sourceTree = "<group>"; };
+		F13C8F5C6CC1B847562528AD /* Pods-guido-1-guido-1UITests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-guido-1-guido-1UITests.debug.xcconfig"; path = "Target Support Files/Pods-guido-1-guido-1UITests/Pods-guido-1-guido-1UITests.debug.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		D47B10272E35E77F0076F1FF /* Exceptions for "guido-1" folder in "guido-1" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = D47B0FE92E35DB7B0076F1FF /* guido-1 */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		D4DD278D2E3A81D1009E2E8C /* Exceptions for "guido-1" folder in "Embed Frameworks" phase from "guido-1" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			attributesByRelativePath = {
+				Frameworks/WebRTC.framework = (CodeSignOnCopy, RemoveHeadersOnCopy, );
+			};
+			buildPhase = D4DD278C2E3A81D1009E2E8C /* Embed Frameworks */;
+			membershipExceptions = (
+				Frameworks/WebRTC.framework,
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D47B0FEC2E35DB7B0076F1FF /* guido-1 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D47B10272E35E77F0076F1FF /* Exceptions for "guido-1" folder in "guido-1" target */,
+				D4DD278D2E3A81D1009E2E8C /* Exceptions for "guido-1" folder in "Embed Frameworks" phase from "guido-1" target */,
+			);
 			path = "guido-1";
 			sourceTree = "<group>";
 		};
@@ -52,6 +107,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E49A9E3D4C746030800DECC7 /* Pods_guido_1.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -59,6 +115,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A55C0A1ECD91D1DC28C4D1A9 /* Pods_guido_1Tests.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -66,6 +123,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AADA7721B01B4C3C182EA27C /* Pods_guido_1_guido_1UITests.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -79,6 +137,8 @@
 				D47B0FFA2E35DB7D0076F1FF /* guido-1Tests */,
 				D47B10042E35DB7D0076F1FF /* guido-1UITests */,
 				D47B0FEB2E35DB7B0076F1FF /* Products */,
+				E4BFAAFCA8AE41B9F5D11250 /* Pods */,
+				EB3159E7926496B27DA5E79F /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -92,6 +152,29 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		E4BFAAFCA8AE41B9F5D11250 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				CC21CDE5EE9D7B8309D18428 /* Pods-guido-1.debug.xcconfig */,
+				07364CFB7CAE9F1D6EFFB859 /* Pods-guido-1.release.xcconfig */,
+				F13C8F5C6CC1B847562528AD /* Pods-guido-1-guido-1UITests.debug.xcconfig */,
+				EF7B2F6ACEC73E005E4911A4 /* Pods-guido-1-guido-1UITests.release.xcconfig */,
+				226D1273819235147558ADDF /* Pods-guido-1Tests.debug.xcconfig */,
+				527CA6ECBC117D5796B29A7E /* Pods-guido-1Tests.release.xcconfig */,
+			);
+			path = Pods;
+			sourceTree = "<group>";
+		};
+		EB3159E7926496B27DA5E79F /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				309DA5C32707E91FA7380BCA /* Pods_guido_1.framework */,
+				275F5B9FE2D897C8397303CA /* Pods_guido_1_guido_1UITests.framework */,
+				2F02A2AABBBF0F950A622CD5 /* Pods_guido_1Tests.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -99,9 +182,11 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = D47B100B2E35DB7D0076F1FF /* Build configuration list for PBXNativeTarget "guido-1" */;
 			buildPhases = (
+				DC96DEC303C69650B98F9D53 /* [CP] Check Pods Manifest.lock */,
 				D47B0FE62E35DB7B0076F1FF /* Sources */,
 				D47B0FE72E35DB7B0076F1FF /* Frameworks */,
 				D47B0FE82E35DB7B0076F1FF /* Resources */,
+				D4DD278C2E3A81D1009E2E8C /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -111,8 +196,6 @@
 				D47B0FEC2E35DB7B0076F1FF /* guido-1 */,
 			);
 			name = "guido-1";
-			packageProductDependencies = (
-			);
 			productName = "guido-1";
 			productReference = D47B0FEA2E35DB7B0076F1FF /* guido-1.app */;
 			productType = "com.apple.product-type.application";
@@ -121,6 +204,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = D47B100E2E35DB7D0076F1FF /* Build configuration list for PBXNativeTarget "guido-1Tests" */;
 			buildPhases = (
+				EAFA25992A14B726329A50C5 /* [CP] Check Pods Manifest.lock */,
 				D47B0FF32E35DB7D0076F1FF /* Sources */,
 				D47B0FF42E35DB7D0076F1FF /* Frameworks */,
 				D47B0FF52E35DB7D0076F1FF /* Resources */,
@@ -134,8 +218,6 @@
 				D47B0FFA2E35DB7D0076F1FF /* guido-1Tests */,
 			);
 			name = "guido-1Tests";
-			packageProductDependencies = (
-			);
 			productName = "guido-1Tests";
 			productReference = D47B0FF72E35DB7D0076F1FF /* guido-1Tests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -144,6 +226,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = D47B10112E35DB7D0076F1FF /* Build configuration list for PBXNativeTarget "guido-1UITests" */;
 			buildPhases = (
+				D67DD5A9382FD9979D09644F /* [CP] Check Pods Manifest.lock */,
 				D47B0FFD2E35DB7D0076F1FF /* Sources */,
 				D47B0FFE2E35DB7D0076F1FF /* Frameworks */,
 				D47B0FFF2E35DB7D0076F1FF /* Resources */,
@@ -157,8 +240,6 @@
 				D47B10042E35DB7D0076F1FF /* guido-1UITests */,
 			);
 			name = "guido-1UITests";
-			packageProductDependencies = (
-			);
 			productName = "guido-1UITests";
 			productReference = D47B10012E35DB7D0076F1FF /* guido-1UITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
@@ -230,6 +311,75 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		D67DD5A9382FD9979D09644F /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-guido-1-guido-1UITests-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		DC96DEC303C69650B98F9D53 /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-guido-1-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		EAFA25992A14B726329A50C5 /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-guido-1Tests-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		D47B0FE62E35DB7B0076F1FF /* Sources */ = {
@@ -321,7 +471,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -378,7 +528,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -390,13 +540,22 @@
 		};
 		D47B100C2E35DB7D0076F1FF /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = CC21CDE5EE9D7B8309D18428 /* Pods-guido-1.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZKLADPT47Z;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/guido-1/Frameworks",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "guido-1/Info.plist";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Guido uses your location to provide contextual travel recommendations and points of interest nearby.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Guido needs microphone access to listen to your voice and provide personalized travel guidance through your headphones.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -417,13 +576,22 @@
 		};
 		D47B100D2E35DB7D0076F1FF /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 07364CFB7CAE9F1D6EFFB859 /* Pods-guido-1.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZKLADPT47Z;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/guido-1/Frameworks",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "guido-1/Info.plist";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Guido uses your location to provide contextual travel recommendations and points of interest nearby.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Guido needs microphone access to listen to your voice and provide personalized travel guidance through your headphones.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -444,12 +612,13 @@
 		};
 		D47B100F2E35DB7D0076F1FF /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 226D1273819235147558ADDF /* Pods-guido-1Tests.debug.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.vjventures.guido-1Tests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -462,12 +631,13 @@
 		};
 		D47B10102E35DB7D0076F1FF /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 527CA6ECBC117D5796B29A7E /* Pods-guido-1Tests.release.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.vjventures.guido-1Tests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -480,6 +650,7 @@
 		};
 		D47B10122E35DB7D0076F1FF /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = F13C8F5C6CC1B847562528AD /* Pods-guido-1-guido-1UITests.debug.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -496,6 +667,7 @@
 		};
 		D47B10132E35DB7D0076F1FF /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = EF7B2F6ACEC73E005E4911A4 /* Pods-guido-1-guido-1UITests.release.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;

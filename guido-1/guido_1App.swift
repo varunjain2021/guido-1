@@ -9,9 +9,36 @@ import SwiftUI
 
 @main
 struct guido_1App: App {
+    @StateObject private var appState = AppState()
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(appState)
+                .onOpenURL { url in
+                    handleDeepLink(url)
+                }
+                .onAppear {
+                    print("🚀 Guido app launched successfully!")
+                    print("💡 Tip: iOS Simulator messages above are normal system behavior")
+                    print("📱 Look for emoji-prefixed messages for app-specific logs")
+                }
+        }
+    }
+    
+    private func handleDeepLink(_ url: URL) {
+        print("🔗 Deep link received: \(url)")
+        guard url.scheme == "guido" else { 
+            print("❌ Invalid deep link scheme")
+            return 
+        }
+        
+        switch url.host {
+        case "listen":
+            print("🎤 Opening listening view via deep link")
+            appState.showListeningView = true
+        default:
+            print("❌ Unknown deep link: \(url)")
         }
     }
 }
