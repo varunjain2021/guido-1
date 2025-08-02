@@ -14,9 +14,9 @@ class AppState: ObservableObject {
     @Published var showRealtimeConversation = false
     @Published var showSimpleConversation = false
     
-    // API Keys - These should be configured externally for security
-    let openAIAPIKey = Bundle.main.object(forInfoDictionaryKey: "OpenAI_API_Key") as? String ?? ""
-    let elevenLabsAPIKey = Bundle.main.object(forInfoDictionaryKey: "ElevenLabs_API_Key") as? String ?? ""
+    // API Keys - Loaded from Config.plist for security
+    let openAIAPIKey: String
+    let elevenLabsAPIKey: String
     
     // Services
     lazy var openAIChatService = OpenAIChatService(apiKey: openAIAPIKey)
@@ -24,6 +24,19 @@ class AppState: ObservableObject {
     lazy var locationManager = LocationManager()
 
     init() {
-        // Initialization logic can go here
+        // Load API keys from Config.plist
+        if let configPath = Bundle.main.path(forResource: "Config", ofType: "plist"),
+           let configDict = NSDictionary(contentsOfFile: configPath) {
+            self.openAIAPIKey = configDict["OpenAI_API_Key"] as? String ?? ""
+            self.elevenLabsAPIKey = configDict["ElevenLabs_API_Key"] as? String ?? ""
+            
+            print("🔑 API Keys loaded from Config.plist")
+            print("🔑 OpenAI API Key: \(openAIAPIKey.isEmpty ? "❌ MISSING" : "✅ LOADED (\(openAIAPIKey.prefix(10))...)")")
+            print("🔑 ElevenLabs API Key: \(elevenLabsAPIKey.isEmpty ? "❌ MISSING" : "✅ LOADED (\(elevenLabsAPIKey.prefix(10))...)")")
+        } else {
+            print("❌ Failed to load Config.plist - using empty API keys")
+            self.openAIAPIKey = ""
+            self.elevenLabsAPIKey = ""
+        }
     }
 } 

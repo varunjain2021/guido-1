@@ -93,11 +93,11 @@ import SileroVAD          // For Silero VAD
 ### 5. Configure API Keys
 ```bash
 # Copy the template configuration file
-cp Config.template.plist Config.plist
+cp guido-1/Config.template.plist guido-1/Config.plist
 
-# Edit Config.plist with your actual API keys:
-# - OpenAI_API_Key: Your OpenAI API key
-# - ElevenLabs_API_Key: Your ElevenLabs API key
+# Edit guido-1/Config.plist with your actual API keys:
+# - OpenAI_API_Key: Your OpenAI API key (without quotes)
+# - ElevenLabs_API_Key: Your ElevenLabs API key (without quotes)
 ```
 
 **⚠️ Security Note:** Never commit `Config.plist` with real API keys to version control!

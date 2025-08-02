@@ -122,5 +122,7 @@ openai-realtime-console-main*
 
 # API Keys and Secrets
 Config.plist
+*/Config.plist
+guido-1/Config.plist
 *.keys
 .env
