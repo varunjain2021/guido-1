@@ -1,6 +1,29 @@
-# Guido AI Assistant - Modern Voice Activity Detection
+# 🧳 Guido AI Travel Companion
 
-A SwiftUI iOS app that demonstrates advanced Voice Activity Detection (VAD) for natural conversation with AI.
+[![iOS](https://img.shields.io/badge/iOS-16.0+-blue.svg)](https://developer.apple.com/ios/)
+[![Swift](https://img.shields.io/badge/Swift-5.0+-orange.svg)](https://swift.org/)
+[![SwiftUI](https://img.shields.io/badge/SwiftUI-4.0+-green.svg)](https://developer.apple.com/xcode/swiftui/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+A cutting-edge SwiftUI iOS app that serves as your intelligent travel companion, featuring advanced Voice Activity Detection (VAD) for natural AI conversations, real-time WebRTC communication, and location-aware proactive guidance.
+
+## ✨ Key Features
+
+- 🎤 **Multiple Conversation Modes**: Real-time WebRTC, push-to-talk, and simple chat
+- 🧠 **Advanced VAD System**: State-of-the-art voice activity detection with multiple algorithms
+- 📍 **Location-Aware**: Proactive travel suggestions based on your current location
+- 🔊 **High-Quality TTS**: ElevenLabs integration for natural-sounding responses
+- 🛡️ **Secure**: API key management with no hardcoded secrets
+- 📱 **Modern UI**: SwiftUI-based responsive design for all device sizes
+
+## 🎬 Demo
+
+<div align="center">
+  <img src="https://via.placeholder.com/300x600/007ACC/FFFFFF?text=Guido+Demo" alt="Guido Demo" width="300"/>
+  <p><em>Real-time conversation with AI travel assistant</em></p>
+</div>
+
+> **Note**: Replace with actual app screenshots when available
 
 ## 🎯 What's New - Modern VAD System
 
@@ -25,7 +48,7 @@ This app now implements a **state-of-the-art Voice Activity Detection system** t
 
 ### 1. Clone the Repository
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/varunjain2021/guido-1.git
 cd guido-1
 ```
 
@@ -255,18 +278,53 @@ pod install
 
 The GoogleWebRTC framework used for real-time communication does not support iOS Simulator. While the app includes conditional compilation to handle this gracefully, full functionality requires a physical device.
 
+## 🛠️ Tech Stack
+
+- **Frontend**: SwiftUI, Combine
+- **Audio Processing**: AudioKit, WebRTC
+- **AI Services**: OpenAI Realtime API, ElevenLabs TTS
+- **Voice Detection**: Silero VAD, WebRTC VAD
+- **Location**: Core Location
+- **Dependency Management**: CocoaPods
+- **Architecture**: MVVM
+
 ## 🤝 Contributing
 
-We welcome contributions! Areas for improvement:
+We welcome contributions! Here's how you can help:
+
+1. **Fork the repository**
+2. **Create a feature branch**: `git checkout -b feature/amazing-feature`
+3. **Commit your changes**: `git commit -m 'Add amazing feature'`
+4. **Push to the branch**: `git push origin feature/amazing-feature`
+5. **Open a Pull Request**
+
+### Areas for Improvement
 - Additional VAD algorithms
 - Better confidence calibration  
 - Multi-language support
 - Real-time visualization enhancements
+- iOS Widget support
+- Apple Watch companion app
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
+## 🙏 Acknowledgments
+
+- [OpenAI](https://openai.com/) for the Realtime API
+- [ElevenLabs](https://elevenlabs.io/) for high-quality TTS
+- [Silero Team](https://github.com/snakers4/silero-vad) for VAD technology
+- [AudioKit](https://audiokit.io/) for audio processing tools
+
+## 📞 Support
+
+- 📧 Email: [varunjain2021@gmail.com](mailto:varunjain2021@gmail.com)
+- 🐛 Issues: [GitHub Issues](https://github.com/varunjain2021/guido-1/issues)
+- 💬 Discussions: [GitHub Discussions](https://github.com/varunjain2021/guido-1/discussions)
+
 ---
 
-**Made with ❤️ for the future of voice interfaces** 
+**Made with ❤️ for the future of voice interfaces**
+
+⭐ **Star this repo if you find it helpful!** 
