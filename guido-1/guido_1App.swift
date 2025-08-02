@@ -34,9 +34,9 @@ struct guido_1App: App {
         }
         
         switch url.host {
-        case "listen":
-            print("🎤 Opening listening view via deep link")
-            appState.showListeningView = true
+        case "realtime":
+            print("🎤 Opening realtime conversation via deep link")
+            appState.showRealtimeConversation = true
         default:
             print("❌ Unknown deep link: \(url)")
         }

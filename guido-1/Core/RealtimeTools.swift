@@ -48,6 +48,7 @@ class RealtimeToolManager: ObservableObject {
     private var locationManager: LocationManager?
     private var eventStore = EKEventStore()
     private var locationSearchService: LocationBasedSearchService?
+    private var openAIChatService: OpenAIChatService?
     
     init() {
         print("🔧 RealtimeToolManager initialized")
@@ -59,6 +60,10 @@ class RealtimeToolManager: ObservableObject {
     
     func setLocationSearchService(_ service: LocationBasedSearchService) {
         self.locationSearchService = service
+    }
+    
+    func setOpenAIChatService(_ service: OpenAIChatService) {
+        self.openAIChatService = service
     }
     
     // MARK: - Tool Definitions
@@ -83,7 +88,10 @@ class RealtimeToolManager: ObservableObject {
             getLanguageTranslationTool(),
             getSafetyInfoTool(),
             getTravelDocumentsTool(),
-            getEmergencyInfoTool()
+            getEmergencyInfoTool(),
+            // AI and web search tools
+            getWebSearchTool(),
+            getAIResponseTool()
         ]
     }
     
@@ -382,6 +390,46 @@ class RealtimeToolManager: ObservableObject {
         )
     }
     
+    private static func getWebSearchTool() -> RealtimeToolDefinition {
+        return RealtimeToolDefinition(
+            name: "web_search",
+            description: "Search the internet for real-time information about travel destinations, local businesses, events, and current conditions",
+            parameters: ToolParameters(
+                properties: [
+                    "query": ParameterProperty(
+                        type: "string",
+                        description: "Search query for finding current information on the web"
+                    ),
+                    "location": ParameterProperty(
+                        type: "string",
+                        description: "Optional location context to refine search results (uses current location if not provided)"
+                    )
+                ],
+                required: ["query"]
+            )
+        )
+    }
+    
+    private static func getAIResponseTool() -> RealtimeToolDefinition {
+        return RealtimeToolDefinition(
+            name: "ai_response",
+            description: "Get intelligent responses and analysis using OpenAI's advanced reasoning capabilities for complex travel planning and recommendations",
+            parameters: ToolParameters(
+                properties: [
+                    "prompt": ParameterProperty(
+                        type: "string",
+                        description: "Detailed prompt for generating intelligent travel advice, recommendations, or analysis"
+                    ),
+                    "context": ParameterProperty(
+                        type: "string",
+                        description: "Optional context about the user's location, preferences, or current situation"
+                    )
+                ],
+                required: ["prompt"]
+            )
+        )
+    }
+    
     // MARK: - Location Search Tool Definitions
     
     private static func findNearbyRestaurantsTool() -> RealtimeToolDefinition {
@@ -518,6 +566,12 @@ class RealtimeToolManager: ObservableObject {
             
         case "find_nearby_services":
             return await executeFindNearbyServices(parameters: parameters)
+            
+        case "web_search":
+            return await executeWebSearch(parameters: parameters)
+            
+        case "ai_response":
+            return await executeAIResponse(parameters: parameters)
             
         default:
             return ToolResult(success: false, data: "Unknown tool: \(name)")
@@ -801,6 +855,76 @@ class RealtimeToolManager: ObservableObject {
         
         let summary = formatLocationSearchResult(result)
         return ToolResult(success: true, data: summary)
+    }
+    
+    // MARK: - AI and Web Search Tool Implementations
+    
+    private func executeWebSearch(parameters: [String: Any]) async -> ToolResult {
+        guard let searchService = locationSearchService else {
+            return ToolResult(success: false, data: "Location search service not available")
+        }
+        
+        guard let query = parameters["query"] as? String else {
+            return ToolResult(success: false, data: "Search query is required")
+        }
+        
+        let location = parameters["location"] as? String
+        
+        // Use general services search for web search functionality
+        let searchQuery = location != nil ? "\(query) in \(location!)" : query
+        let result = await searchService.findNearbyServices(serviceType: "general search", query: searchQuery)
+        
+        if let error = result.error {
+            return ToolResult(success: false, data: "Web search error: \(error)")
+        }
+        
+        let summary = formatLocationSearchResult(result)
+        return ToolResult(success: true, data: summary)
+    }
+    
+    private func executeAIResponse(parameters: [String: Any]) async -> ToolResult {
+        guard let openAIChatService = openAIChatService else {
+            return ToolResult(success: false, data: "OpenAI Chat service not available")
+        }
+        
+        guard let prompt = parameters["prompt"] as? String else {
+            return ToolResult(success: false, data: "Prompt is required")
+        }
+        
+        let context = parameters["context"] as? String
+        
+        // Build enhanced prompt with location context if available
+        let locationContext = locationManager?.getCurrentLocationContext()
+        let enhancedPrompt = buildEnhancedPrompt(prompt: prompt, context: context, locationContext: locationContext)
+        
+        do {
+            let response = try await openAIChatService.send(message: enhancedPrompt, conversation: [])
+            return ToolResult(success: true, data: response)
+        } catch {
+            return ToolResult(success: false, data: "AI response error: \(error.localizedDescription)")
+        }
+    }
+    
+    private func buildEnhancedPrompt(prompt: String, context: String?, locationContext: LocationContext?) -> String {
+        var enhancedPrompt = prompt
+        
+        if let context = context, !context.isEmpty {
+            enhancedPrompt += "\n\nAdditional context: \(context)"
+        }
+        
+        if let locationContext = locationContext {
+            enhancedPrompt += "\n\nCurrent location context:"
+            enhancedPrompt += "\n- Location: \(locationContext.address ?? "Unknown")"
+            enhancedPrompt += "\n- City: \(locationContext.city ?? "Unknown")"
+            enhancedPrompt += "\n- Country: \(locationContext.country ?? "Unknown")"
+            enhancedPrompt += "\n- Movement: \(locationContext.isMoving ? "Moving (\(String(format: "%.1f", locationContext.speed)) km/h)" : "Stationary")"
+            
+            if !locationContext.nearbyPlaces.isEmpty {
+                enhancedPrompt += "\n- Nearby places: \(locationContext.nearbyPlaces.map { $0.name }.joined(separator: ", "))"
+            }
+        }
+        
+        return enhancedPrompt
     }
     
     // MARK: - Helper Methods

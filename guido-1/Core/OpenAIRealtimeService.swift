@@ -89,16 +89,15 @@ struct SessionUpdateEvent: Codable {
         struct TranscriptionConfig: Codable {
             let model: String
             let language: String?
-            let prompt: String?
             
             init() {
                 self.model = "whisper-1"
                 self.language = "en"
-                self.prompt = "Transcribe clear human speech from the user. Focus on natural conversational flow and complete thoughts. Ignore background noise, system sounds, and any audio feedback."
             }
             
             enum CodingKeys: String, CodingKey {
-                case model, language, prompt
+                case model
+                case language
             }
         }
         
@@ -122,8 +121,8 @@ struct SessionUpdateEvent: Codable {
                 } else {
                     self.type = "server_vad"
                     self.eagerness = nil
-                    // Use simple 0.5 threshold to avoid decimal precision issues entirely
-                    self.threshold = 0.5
+                    // Use optimized threshold for better speech detection
+                    self.threshold = OpenAIRealtimeService.VADConfig.serverThreshold
                     self.silenceDurationMs = OpenAIRealtimeService.VADConfig.serverSilenceDuration
                     self.prefixPaddingMs = OpenAIRealtimeService.VADConfig.serverPrefixPadding
                 }
@@ -241,12 +240,16 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     
     // MARK: - VAD Configuration
     fileprivate enum VADConfig {
-        static let useSemanticVAD = false  // Use server VAD - semantic VAD has been unreliable
+        static let useSemanticVAD = false  // Use server VAD for reliable turn detection
         static let semanticEagerness = "medium"  
-        // More sensitive VAD settings to detect speech better
-        static let serverThreshold: Double = 0.3  // Lower threshold for more sensitive detection
-        static let serverSilenceDuration = 200  // Shorter silence duration  
-        static let serverPrefixPadding = 200   // Shorter prefix padding
+        // Simple VAD settings - trust OpenAI defaults with minimal changes
+        static let serverThreshold: Double = 0.5  // Default threshold
+        static let serverSilenceDuration = 500   // Default silence duration
+        static let serverPrefixPadding = 200     // Default prefix padding
+        
+        // Minimum speech duration threshold (easily adjustable for testing)
+        // Original: 0.6s | Testing: 0.3s | Revert to 0.6s if issues arise
+        static let minimumSpeechDuration: Double = 0.6
     }
     @Published var isConnected = false
     @Published var connectionStatus = "Disconnected"
@@ -317,10 +320,20 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     // MARK: - Audio Session Setup
     private func setupAudioSession() {
         do {
-            // Configure for voice chat with aggressive echo cancellation
-            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothA2DP])
+            // Configure for optimized voice input with enhanced microphone sensitivity
+            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [
+                .defaultToSpeaker, 
+                .allowBluetoothA2DP, 
+                .allowBluetooth,
+                .mixWithOthers
+            ])
+            
+            // Set preferred sample rate and buffer duration for better voice capture
+            try audioSession.setPreferredSampleRate(48000)
+            try audioSession.setPreferredIOBufferDuration(0.005) // 5ms for low latency
+            
             try audioSession.setActive(true)
-            print("✅ Audio session configured for voice chat with built-in echo cancellation")
+            print("✅ Audio session configured for optimized voice input with enhanced sensitivity")
         } catch {
             print("❌ Failed to setup audio session: \(error)")
         }
@@ -339,7 +352,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let inputFormat = inputNode?.outputFormat(forBus: 0)
         print("🎤 [AUDIO] Input format: \(inputFormat?.description ?? "unknown")")
         
-        inputNode?.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] (buffer, time) in
+        inputNode?.installTap(onBus: 0, bufferSize: 512, format: inputFormat) { [weak self] (buffer, time) in
             guard let self = self else { return }
             
             // Calculate audio level for visualization (always)
@@ -353,14 +366,10 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 print("🎤 [AUDIO] Audio state - isAIResponding: \(isAIResponding), isPlayingQueue: \(isPlayingQueue), level: \(audioLevel)")
             }
             
-            // Only block audio input when AI is actively generating response (not during playback)
-            // This allows users to interrupt or speak while audio is playing back
-            guard !isAIResponding else { 
-                if Int.random(in: 1...100) == 1 {
-                    print("🚫 [AUDIO] Blocking audio input - AI generating response")
-                }
-                return  // Block transmission only during active AI response generation
-            }
+            // Block audio input while AI playback queue is active to avoid echo being transcribed
+            guard !isPlayingQueue else { return }
+            // Allow user to interrupt when AI is responding but not yet playing audio
+            guard !isAIResponding else { return }
             
             let audioData = self.convertAudioBufferToData(buffer)
             if audioData.count > 0 {
@@ -525,6 +534,10 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
             locationManager: manager
         )
         toolManager.setLocationSearchService(locationSearchService)
+        
+        // Initialize OpenAI Chat service
+        let openAIChatService = OpenAIChatService(apiKey: self.apiKey)
+        toolManager.setOpenAIChatService(openAIChatService)
     }
     
     // MARK: - Connection Management
@@ -660,6 +673,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 - Safety information and travel advisories
                 - Travel document requirements (visas, passports)
                 - Emergency contacts and services
+                - Real-time web search for current information about destinations, businesses, and local conditions
+                - Advanced AI reasoning and analysis for complex travel planning and personalized recommendations
                 
                 Use these tools naturally in conversation to provide the most helpful and personalized travel experience.
                 
@@ -670,8 +685,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 outputAudioFormat: "pcm16",
                 inputAudioTranscription: SessionUpdateEvent.SessionConfig.TranscriptionConfig(),
                 turnDetection: SessionUpdateEvent.SessionConfig.TurnDetectionConfig(),
-                temperature: nil,
-                maxResponseOutputTokens: nil,
+                temperature: 0.75,
+                maxResponseOutputTokens: "inf",
                 toolChoice: "auto",
                 tools: RealtimeToolManager.getAllToolDefinitions()
             )
@@ -681,7 +696,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let vadType = VADConfig.useSemanticVAD ? "semantic_vad" : "server_vad"
         let eagerness = VADConfig.useSemanticVAD ? VADConfig.semanticEagerness : "N/A"
         print("✅ Session configured with \(vadType) (eagerness: \(eagerness), auto-response: true, interrupts: enabled)")
-        print("🔧 VAD Settings: Semantic=\(VADConfig.useSemanticVAD), Timeout=\(VADConfig.useSemanticVAD ? "3s" : "5s")")
+        print("🔧 VAD Settings: Type=\(vadType), Threshold=\(VADConfig.serverThreshold), SilenceDuration=\(VADConfig.serverSilenceDuration)ms, PrefixPadding=\(VADConfig.serverPrefixPadding)ms")
     }
     
     private func startListening() {
@@ -784,12 +799,20 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
                         lowercaseTranscript.contains(phrase)
                     }
                     
-                    // Check for empty or whitespace-only transcripts
-                    if trimmedTranscript.isEmpty {
-                        print("🚫 [TRANSCRIPT] Empty transcript - likely audio buffer issue")
-                        // Don't add to conversation, but don't return - let the flow continue
-                        return
-                    }
+                                    // Check for empty or whitespace-only transcripts
+                if trimmedTranscript.isEmpty {
+                    print("🚫 [TRANSCRIPT] Empty transcript - likely audio buffer issue")
+                    return
+                }
+                
+                // Skip if this looks like a duplicate transcription (happens in subsequent turns)
+                if let lastMessage = conversation.last,
+                   lastMessage.role == "user",
+                   lastMessage.content == trimmedTranscript,
+                   Date().timeIntervalSince(lastMessage.timestamp) < 2.0 {
+                    print("🚫 [TRANSCRIPT] Skipping duplicate transcription: '\(trimmedTranscript)'")
+                    return
+                }
                     
                     // Filter system prompts or extremely long transcripts (likely errors)
                     if isSystemPrompt || transcript.count > 200 {
@@ -855,8 +878,11 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 print("🎵 [AI_AUDIO] Audio response completed - setting isAIResponding=false")
                 // Re-enable microphone input after AI finishes speaking
                 isAIResponding = false
-                // Server will automatically clear input buffer if needed
-                print("✅ [AI_AUDIO] AI audio completed - ready for user input")
+                
+                // Clear any residual audio buffer that might cause transcription issues
+                await clearInputAudioBuffer()
+                
+                print("✅ [AI_AUDIO] AI audio completed - buffer cleared - ready for user input")
                 // Notify audio manager that streaming should finish
                 NotificationCenter.default.post(name: .realtimeAudioStreamCompleted, object: nil)
                 
@@ -864,13 +890,11 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 lastResponseCompleteTime = Date().timeIntervalSince1970
                 print("✅ [RESPONSE] Response completed at \(lastResponseCompleteTime) - resetting state")
                 isAIResponding = false
-                conversationState = .idle
+                conversationState = .idle  // Reset to idle - let server VAD manage state
                 
                 // Reset speech tracking for next conversation turn
                 speechStartTime = 0
                 print("🔄 [RESPONSE] Ready for next speech input")
-                
-                // Trust server VAD to maintain state automatically
                 
             case "input_audio_buffer.speech_started":
                 let currentTime = Date().timeIntervalSince1970
@@ -898,19 +922,21 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 print("🤐 [VAD] Speech stopped at \(currentTime) - duration: \(speechDuration)s")
                 print("🤐 [VAD] AI responding: \(isAIResponding), conversation state: \(conversationState)")
                 
-                // Let server VAD handle all speech detection - no manual filtering
+                // Let server VAD handle all speech detection - trust OpenAI's optimized algorithms
                 
-                // Log short speech but don't skip - let server VAD decide
-                if speechDuration < 0.5 {
-                    print("⚠️ [VAD] Short speech detected (\(speechDuration)s) - but letting server VAD decide")
+                // Ignore very short utterances that Whisper often mis-transcribes
+                if speechDuration < VADConfig.minimumSpeechDuration {
+                    print("⚠️ [VAD] Speech too short (\(String(format: "%.2f", speechDuration))s) – ignored (threshold: \(VADConfig.minimumSpeechDuration)s)")
+                    conversationState = .listening
+                    return
                 }
+                // Accept all other speech durations - server VAD will determine validity
+                print("✅ [VAD] Speech stopped (duration: \(String(format: "%.2f", speechDuration))s) - server VAD processing")
                 
                 conversationState = .processing
-                // Server VAD handles timing automatically
                 
-                // With server VAD, we don't need to manually commit or request responses
-                // The server handles turn detection automatically
-                print("✅ [VAD] Speech stopped - server VAD will handle automatically")
+                // Trust server VAD for all turn detection and response generation
+                print("🔄 [VAD] Server VAD will handle turn detection automatically")
                 
             case "input_audio_buffer.committed":
                 print("✅ [BUFFER] Audio buffer committed successfully")

@@ -153,11 +153,17 @@ struct ProactiveGuideView: View {
             // AudioManager cleanup is handled automatically in deinit
         }
         .sheet(isPresented: $showConversationView) {
-            ListeningView(
-                openAIAPIKey: appState.openAIAPIKey,
-                elevenLabsAPIKey: appState.elevenLabsAPIKey,
-                initialMessage: proactiveMessage
-            )
+            NavigationView {
+                RealtimeConversationView(openAIAPIKey: appState.openAIAPIKey)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            Button("Close") {
+                                showConversationView = false
+                            }
+                        }
+                    }
+            }
         }
     }
     

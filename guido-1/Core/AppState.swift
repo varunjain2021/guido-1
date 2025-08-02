@@ -10,9 +10,7 @@ import SwiftUI
 
 @MainActor
 class AppState: ObservableObject {
-    @Published var showListeningView = false
     @Published var showRealtimeConversation = false
-    @Published var showSimpleConversation = false
     
     // API Keys - Loaded from Config.plist for security
     let openAIAPIKey: String
