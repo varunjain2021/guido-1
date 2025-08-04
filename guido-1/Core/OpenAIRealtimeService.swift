@@ -236,7 +236,7 @@ struct AudioDeltaEvent: Codable {
 
 // MARK: - Service Implementation
 @MainActor
-class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
+class OpenAIRealtimeService: NSObject, ObservableObject {
     
     // MARK: - VAD Configuration
     fileprivate enum VADConfig {
@@ -279,11 +279,16 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private var inputNode: AVAudioInputNode?
     private var audioSession: AVAudioSession
     
-    // Audio playback
-    private var audioPlayer: AVAudioPlayer?
-    private var audioPlayerQueue: [Data] = []
+    // Audio playback - Streaming solution using AVAudioPlayerNode
+    private var audioPlayerNode: AVAudioPlayerNode?
+    private var audioMixerNode: AVAudioMixerNode?
+    private var streamingAudioBuffer: Data = Data()
     private var isPlayingQueue = false
     private let audioPlayerLock = NSLock()
+    // Audio formats for different purposes
+    private let pcm24Format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24000, channels: 1, interleaved: false)!
+    private var engineOutputFormat: AVAudioFormat?
+    private var audioConverter: AVAudioConverter?
     
 
     
@@ -329,8 +334,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
             ])
             
             // Set preferred sample rate and buffer duration for better voice capture
-            try audioSession.setPreferredSampleRate(48000)
-            try audioSession.setPreferredIOBufferDuration(0.005) // 5ms for low latency
+            try audioSession.setPreferredSampleRate(24000)
+            try audioSession.setPreferredIOBufferDuration(0.020) // 20ms for smoother streaming playback
             
             try audioSession.setActive(true)
             print("✅ Audio session configured for optimized voice input with enhanced sensitivity")
@@ -352,7 +357,10 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let inputFormat = inputNode?.outputFormat(forBus: 0)
         print("🎤 [AUDIO] Input format: \(inputFormat?.description ?? "unknown")")
         
-        inputNode?.installTap(onBus: 0, bufferSize: 512, format: inputFormat) { [weak self] (buffer, time) in
+        // Set up streaming audio nodes BEFORE starting the engine
+        setupStreamingAudio()
+        
+        inputNode?.installTap(onBus: 0, bufferSize: 2048, format: inputFormat) { [weak self] (buffer, time) in
             guard let self = self else { return }
             
             // Calculate audio level for visualization (always)
@@ -393,13 +401,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
         audioEngine = nil
         inputNode = nil
         
-        // Stop audio playback
-        audioPlayerLock.lock()
-        audioPlayer?.stop()
-        audioPlayer = nil
-        audioPlayerQueue.removeAll()
-        isPlayingQueue = false
-        audioPlayerLock.unlock()
+        // Stop streaming audio playback
+        stopAudioPlayback()
         
         print("🔇 Audio capture and playback stopped")
     }
@@ -435,84 +438,217 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
         return Data(bytes: int16Array, count: frameCount * MemoryLayout<Int16>.size)
     }
     
-    // MARK: - Audio Playback
-    private func playAudio(data: Data) {
+    // MARK: - Audio Playback - Streaming Solution
+        private func playAudio(data: Data) {
         audioPlayerLock.lock()
         defer { audioPlayerLock.unlock() }
-        
-        audioPlayerQueue.append(data)
-        
+
+        // Mark playback queue as active when we start receiving audio
         if !isPlayingQueue {
-            processAudioQueue()
+            isPlayingQueue = true
+            print("🎵 [AUDIO] Playback queue started - blocking user input")
         }
+
+        // Append new audio data to the streaming buffer
+        streamingAudioBuffer.append(data)
+
+        // Process buffered audio (setup already done in startAudioCapture)
+        processStreamingAudio()
     }
     
-    private func processAudioQueue() {
-        guard !audioPlayerQueue.isEmpty else {
-            isPlayingQueue = false
+    private func setupStreamingAudio() {
+        // Create audio nodes for streaming playback
+        audioPlayerNode = AVAudioPlayerNode()
+        audioMixerNode = AVAudioMixerNode()
+        
+        guard let playerNode = audioPlayerNode,
+              let mixerNode = audioMixerNode,
+              let audioEngine = audioEngine else {
+            print("❌ Failed to create audio nodes for streaming")
             return
         }
         
-        isPlayingQueue = true
-        let audioData = audioPlayerQueue.removeFirst()
+        // Use OpenAI's native format for the player node (24kHz, Int16, Mono)
+        let openAIFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24000, channels: 1, interleaved: false)!
         
-        // Convert PCM16 data to playable format
-        let wavData = convertPCM16ToWAV(audioData)
+        // Use system's preferred format for output (usually 48kHz, Float32, Stereo)
+        let systemFormat = audioEngine.outputNode.outputFormat(forBus: 0)
+        engineOutputFormat = systemFormat
         
-        do {
-            audioPlayer = try AVAudioPlayer(data: wavData)
-            audioPlayer?.delegate = self
-            audioPlayer?.prepareToPlay()
-            audioPlayer?.play()
-            
-            print("🔊 Playing audio chunk (\(audioData.count) bytes)")
-        } catch {
-            print("❌ Failed to play audio: \(error)")
-            processAudioQueue() // Continue with next item
+        print("🆔 OpenAI format: \(openAIFormat.sampleRate)Hz, \(openAIFormat.channelCount) channels, \(openAIFormat.commonFormat.rawValue)")
+        print("🔊 System format: \(systemFormat.sampleRate)Hz, \(systemFormat.channelCount) channels, \(systemFormat.commonFormat.rawValue)")
+        
+        // Attach nodes to the audio engine
+        audioEngine.attach(playerNode)
+        audioEngine.attach(mixerNode)
+        
+        // Connect with automatic format conversion (nil = let AVAudioEngine choose compatible formats)
+        // PlayerNode (24kHz Int16 Mono) -> MixerNode -> OutputNode (System format)
+        audioEngine.connect(playerNode, to: mixerNode, format: nil)
+        audioEngine.connect(mixerNode, to: audioEngine.outputNode, format: nil)
+        
+        print("✅ Streaming audio setup complete with automatic format conversion")
+    }
+    
+    private func processStreamingAudio() {
+        guard let playerNode = audioPlayerNode,
+              streamingAudioBuffer.count >= 480 else { // Process in 20ms chunks (480 samples at 24kHz)
+            // If no more data to process, mark playback queue as complete
+            if streamingAudioBuffer.isEmpty {
+                isPlayingQueue = false
+                print("🔇 [AUDIO] Playback queue completed - ready for user input")
+            }
+            return
+        }
+        
+        // Get the player node's current output format (after connection setup)
+        let playerOutputFormat = playerNode.outputFormat(forBus: 0)
+        
+        // Debug: Log the actual format the player expects
+        if Int.random(in: 1...50) == 1 {
+            print("🔊 Player expects: \(playerOutputFormat.sampleRate)Hz, \(playerOutputFormat.channelCount) channels, format: \(playerOutputFormat.commonFormat.rawValue)")
+        }
+        
+        // Process in 20ms chunks for smooth playback (based on OpenAI's 24kHz rate)
+        let openAIChunkSize = 480 * 2 // 480 samples * 2 bytes per sample at 24kHz
+        let audioDataSize = min(streamingAudioBuffer.count, openAIChunkSize)
+        let inputFrameCount = audioDataSize / 2 // 16-bit = 2 bytes per frame
+        
+        // Calculate output frame count based on player's sample rate
+        let sampleRateRatio = playerOutputFormat.sampleRate / 24000.0 // Player rate / OpenAI rate
+        let outputFrameCount = Int(Double(inputFrameCount) * sampleRateRatio)
+        
+        // Create buffer using player node's expected format with correct frame count
+        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: playerOutputFormat, frameCapacity: AVAudioFrameCount(outputFrameCount)) else {
+            print("❌ Failed to create output buffer with format: \(playerOutputFormat)")
+            return
+        }
+        
+        // Convert OpenAI's mono PCM16 data to match player node's expected format
+        let audioData = streamingAudioBuffer.prefix(audioDataSize)
+        
+        // Handle different format types (Int16 vs Float32)
+        if playerOutputFormat.commonFormat == .pcmFormatInt16 {
+            // Player expects Int16 format
+            if playerOutputFormat.channelCount == 1 {
+                // Mono Int16
+                audioData.withUnsafeBytes { bytes in
+                    guard let int16Pointer = bytes.bindMemory(to: Int16.self).baseAddress,
+                          let channelData = outputBuffer.int16ChannelData else { return }
+                    // For mono Int16, handle sample rate conversion
+                    for i in 0..<inputFrameCount {
+                        let sample = int16Pointer[i]
+                        // Upsample by duplicating samples for sample rate conversion
+                        let outputStartIndex = Int(Double(i) * sampleRateRatio)
+                        let outputEndIndex = min(Int(Double(i + 1) * sampleRateRatio), outputFrameCount)
+                        
+                        for j in outputStartIndex..<outputEndIndex {
+                            channelData[0][j] = sample
+                        }
+                    }
+                }
+            } else {
+                // Stereo Int16
+                audioData.withUnsafeBytes { bytes in
+                    guard let int16Pointer = bytes.bindMemory(to: Int16.self).baseAddress,
+                          let leftChannel = outputBuffer.int16ChannelData?[0],
+                          let rightChannel = outputBuffer.int16ChannelData?[1] else { return }
+                    
+                    for i in 0..<inputFrameCount {
+                        let sample = int16Pointer[i]
+                        // Upsample by duplicating samples for sample rate conversion
+                        let outputStartIndex = Int(Double(i) * sampleRateRatio)
+                        let outputEndIndex = min(Int(Double(i + 1) * sampleRateRatio), outputFrameCount)
+                        
+                        for j in outputStartIndex..<outputEndIndex {
+                            leftChannel[j] = sample
+                            rightChannel[j] = sample
+                        }
+                    }
+                }
+            }
+        } else if playerOutputFormat.commonFormat == .pcmFormatFloat32 {
+            // Player expects Float32 format - convert Int16 to Float32
+            if playerOutputFormat.channelCount == 1 {
+                // Mono Float32
+                audioData.withUnsafeBytes { bytes in
+                    guard let int16Pointer = bytes.bindMemory(to: Int16.self).baseAddress,
+                          let channelData = outputBuffer.floatChannelData else { return }
+                    
+                    for i in 0..<inputFrameCount {
+                        let floatSample = Float(int16Pointer[i]) / 32767.0
+                        // Upsample by duplicating samples for sample rate conversion
+                        let outputStartIndex = Int(Double(i) * sampleRateRatio)
+                        let outputEndIndex = min(Int(Double(i + 1) * sampleRateRatio), outputFrameCount)
+                        
+                        for j in outputStartIndex..<outputEndIndex {
+                            channelData[0][j] = floatSample
+                        }
+                    }
+                }
+            } else {
+                // Stereo Float32
+                audioData.withUnsafeBytes { bytes in
+                    guard let int16Pointer = bytes.bindMemory(to: Int16.self).baseAddress,
+                          let leftChannel = outputBuffer.floatChannelData?[0],
+                          let rightChannel = outputBuffer.floatChannelData?[1] else { return }
+                    
+                    for i in 0..<inputFrameCount {
+                        let floatSample = Float(int16Pointer[i]) / 32767.0
+                        // Upsample by duplicating samples for sample rate conversion
+                        let outputStartIndex = Int(Double(i) * sampleRateRatio)
+                        let outputEndIndex = min(Int(Double(i + 1) * sampleRateRatio), outputFrameCount)
+                        
+                        for j in outputStartIndex..<outputEndIndex {
+                            leftChannel[j] = floatSample
+                            rightChannel[j] = floatSample
+                        }
+                    }
+                }
+            }
+        } else {
+            print("❌ Unsupported audio format: \(playerOutputFormat.commonFormat.rawValue)")
+            return
+        }
+        
+        outputBuffer.frameLength = AVAudioFrameCount(outputFrameCount)
+        
+        // Schedule buffer for playback (AVAudioEngine handles 24kHz->48kHz conversion automatically)
+        playerNode.scheduleBuffer(outputBuffer) { [weak self] in
+            DispatchQueue.main.async {
+                self?.processStreamingAudio()
+            }
+        }
+        
+        // Start playing if not already playing
+        if !playerNode.isPlaying {
+            playerNode.play()
+            isPlayingQueue = true
+            print("🎵 Started streaming audio playback")
+        }
+        
+        // Remove processed data from buffer
+        streamingAudioBuffer.removeFirst(audioDataSize)
+        
+        // Check if we're done playing
+        if streamingAudioBuffer.isEmpty && !playerNode.isPlaying {
+            isPlayingQueue = false
+            print("✅ Streaming audio playback completed")
         }
     }
     
-    private func convertPCM16ToWAV(_ pcmData: Data) -> Data {
-        var wavData = Data()
+    private func stopAudioPlayback() {
+        audioPlayerLock.lock()
+        defer { audioPlayerLock.unlock() }
         
-        // WAV header
-        let sampleRate: UInt32 = 24000
-        let numChannels: UInt16 = 1
-        let bitsPerSample: UInt16 = 16
-        let byteRate = sampleRate * UInt32(numChannels) * UInt32(bitsPerSample) / 8
-        let blockAlign = numChannels * bitsPerSample / 8
-        let dataSize = UInt32(pcmData.count)
-        let fileSize = 36 + dataSize
-        
-        // RIFF header
-        wavData.append("RIFF".data(using: .ascii)!)
-        wavData.append(withUnsafeBytes(of: fileSize.littleEndian) { Data($0) })
-        wavData.append("WAVE".data(using: .ascii)!)
-        
-        // fmt chunk
-        wavData.append("fmt ".data(using: .ascii)!)
-        wavData.append(withUnsafeBytes(of: UInt32(16).littleEndian) { Data($0) })
-        wavData.append(withUnsafeBytes(of: UInt16(1).littleEndian) { Data($0) })
-        wavData.append(withUnsafeBytes(of: numChannels.littleEndian) { Data($0) })
-        wavData.append(withUnsafeBytes(of: sampleRate.littleEndian) { Data($0) })
-        wavData.append(withUnsafeBytes(of: byteRate.littleEndian) { Data($0) })
-        wavData.append(withUnsafeBytes(of: blockAlign.littleEndian) { Data($0) })
-        wavData.append(withUnsafeBytes(of: bitsPerSample.littleEndian) { Data($0) })
-        
-        // data chunk
-        wavData.append("data".data(using: .ascii)!)
-        wavData.append(withUnsafeBytes(of: dataSize.littleEndian) { Data($0) })
-        wavData.append(pcmData)
-        
-        return wavData
+        audioPlayerNode?.stop()
+        streamingAudioBuffer.removeAll()
+        isPlayingQueue = false
+        print("🛑 Stopped streaming audio playback")
     }
     
-    // MARK: - AVAudioPlayerDelegate
-    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        Task { @MainActor in
-            self.processAudioQueue()
-        }
-    }
+    // MARK: - Audio Delegate Methods Removed
+    // No longer needed with AVAudioPlayerNode streaming
     
     // MARK: - Streaming Control (for compatibility with UI)
     func startStreaming() {
@@ -878,6 +1014,11 @@ class OpenAIRealtimeService: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 print("🎵 [AI_AUDIO] Audio response completed - setting isAIResponding=false")
                 // Re-enable microphone input after AI finishes speaking
                 isAIResponding = false
+                
+                // Reset playback queue to allow user input
+                audioPlayerLock.lock()
+                isPlayingQueue = false
+                audioPlayerLock.unlock()
                 
                 // Clear any residual audio buffer that might cause transcription issues
                 await clearInputAudioBuffer()
