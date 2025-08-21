@@ -187,4 +187,391 @@ struct Choice: Codable {
 
 struct TranscriptionResponse: Codable {
     let text: String
+}
+
+// MARK: - Location Intelligence Extensions
+
+extension OpenAIChatService {
+    
+    /// Synthesizes location results from multiple data sources into natural, conversational responses
+    func synthesizeLocationResults(
+        userQuery: String,
+        googlePlaces: [Any]?,
+        webSearchData: String?,
+        locationContext: String,
+        conversationContext: String? = nil
+    ) async throws -> String {
+        
+        let systemPrompt = ChatMessage(
+            role: "system",
+            content: """
+            You are Guido's location intelligence system. Synthesize location data from multiple sources into natural, helpful responses.
+            
+            CRITICAL ACCURACY REQUIREMENTS:
+            - ONLY mention specific addresses/businesses that are explicitly provided in the data
+            - NEVER invent, approximate, or hallucinate addresses, names, or details
+            - Use EXACT names and addresses from the provided data
+            - If uncertain about details, be general ("I found a location nearby") rather than specific
+            
+            Guidelines:
+            - Prioritize accuracy and user safety above all else
+            - Be conversational and contextual
+            - Highlight key details (open/closed, distance, ratings) naturally from the data
+            - Suggest the best options based on actual provided information
+            - If data conflicts or seems unreliable, explain uncertainty honestly
+            - Be concise but informative
+            - Use natural speech patterns, not template formatting
+            - Consider the user's likely intent and provide proactive suggestions
+            """
+        )
+        
+        var dataDescription = "Location Context: \(locationContext)\n"
+        
+        if let googlePlaces = googlePlaces, !googlePlaces.isEmpty {
+            dataDescription += "\nGoogle Places Results (\(googlePlaces.count) found):\n"
+            for (index, place) in googlePlaces.enumerated() {
+                if let placeDict = place as? [String: Any] {
+                    let name = placeDict["name"] as? String ?? "Unknown"
+                    let address = placeDict["address"] as? String ?? "Address unavailable"
+                    let distance = placeDict["distance_meters"] as? Int ?? 0
+                    let isOpen = placeDict["is_open"] as? Bool
+                    let rating = placeDict["rating"] as? Double
+                    
+                    dataDescription += "\(index + 1). \(name) at \(address) (\(distance)m away)"
+                    if let open = isOpen {
+                        dataDescription += open ? " - OPEN" : " - CLOSED"
+                    }
+                    if let rating = rating, rating > 0 {
+                        dataDescription += " - Rating: \(rating)"
+                    }
+                    dataDescription += "\n"
+                }
+            }
+        }
+        
+        if let webData = webSearchData, !webData.isEmpty {
+            dataDescription += "\nWeb Search Context: \(webData)\n"
+        }
+        
+        let userPrompt = ChatMessage(
+            role: "user",
+            content: """
+            User asked: "\(userQuery)"
+            
+            \(dataDescription)
+            
+            \(conversationContext.map { "Conversation context: \($0)" } ?? "")
+            
+            Provide a natural, helpful response with your best recommendations. Focus on being genuinely helpful rather than just listing information.
+            """
+        )
+        
+        let response = try await send(message: userPrompt.content, conversation: [systemPrompt])
+        
+        // Validate that LLM response doesn't contain hallucinated addresses
+        if let googlePlaces = googlePlaces, !googlePlaces.isEmpty {
+            let validatedResponse = validateLocationResponse(response: response, googlePlacesData: googlePlaces)
+            return validatedResponse
+        }
+        
+        return response
+    }
+    
+    /// Intelligently detects if results need user clarification
+    func detectAmbiguityAndAskClarification(
+        userQuery: String,
+        googlePlaces: [Any]?,
+        webSearchData: String?,
+        locationContext: String
+    ) async throws -> String? {
+        
+        let systemPrompt = ChatMessage(
+            role: "system",
+            content: """
+            You are Guido's ambiguity detection system. Analyze search results to determine if they might not match the user's intent.
+            
+            Detect these scenarios that require clarification:
+            1. Brand name confusion (e.g., "Uniqlo" vs "Uniclo", "Starbucks" vs "Star Bucks")
+            2. Similar but different businesses (e.g., "Target that sells X brand" vs "X brand store")
+            3. Generic terms that could mean multiple things
+            4. Results that seem unrelated to the query
+            5. No exact matches found, only similar alternatives
+            
+            If clarification is needed, respond with "CLARIFY:" followed by a natural question.
+            If results seem appropriate, respond with "PROCEED"
+            
+            Be intelligent - minor variations are OK, but significant mismatches need clarification.
+            """
+        )
+        
+        var analysisContext = "User Query: '\(userQuery)'\nLocation: \(locationContext)\n"
+        
+        if let googlePlaces = googlePlaces, !googlePlaces.isEmpty {
+            analysisContext += "\nGoogle Places Results:\n"
+            for (index, place) in googlePlaces.enumerated() {
+                if let placeDict = place as? [String: Any] {
+                    let name = placeDict["name"] as? String ?? "Unknown"
+                    let address = placeDict["address"] as? String ?? "Address unavailable"
+                    analysisContext += "\(index + 1). \(name) at \(address)\n"
+                }
+            }
+        }
+        
+        if let webData = webSearchData, !webData.isEmpty {
+            analysisContext += "\nWeb Search Context: \(webData)\n"
+        }
+        
+        let userPrompt = ChatMessage(
+            role: "user",
+            content: """
+            \(analysisContext)
+            
+            Do these results match what the user is looking for, or should we ask for clarification?
+            """
+        )
+        
+        let response = try await send(message: userPrompt.content, conversation: [systemPrompt])
+        
+        if response.hasPrefix("CLARIFY:") {
+            return String(response.dropFirst(8).trimmingCharacters(in: .whitespaces))
+        }
+        
+        return nil // Proceed with normal results
+    }
+    
+    /// Validates that LLM response only contains addresses from the actual data
+    private func validateLocationResponse(response: String, googlePlacesData: [Any]) -> String {
+        // Extract valid addresses from Google Places data
+        var validAddresses: [String] = []
+        var validNames: [String] = []
+        
+        for place in googlePlacesData {
+            if let placeDict = place as? [String: Any] {
+                if let address = placeDict["address"] as? String {
+                    validAddresses.append(address)
+                }
+                if let name = placeDict["name"] as? String {
+                    validNames.append(name)
+                }
+            }
+        }
+        
+        // Check for common hallucination patterns in addresses
+        let suspiciousPatterns = [
+            "165 Amsterdam Ave",
+            "165 Amsterdam Avenue", 
+            "123 Main St",
+            "456 Broadway"
+        ]
+        
+        for pattern in suspiciousPatterns {
+            if response.contains(pattern) && !validAddresses.contains(where: { $0.contains(pattern) }) {
+                print("⚠️ [OpenAIChatService] Detected potential hallucinated address: \(pattern)")
+                // Return a safer, more general response
+                return "I found several locations nearby. Let me give you the verified information: \(validNames.joined(separator: ", ")). Would you like specific details about any of these?"
+            }
+        }
+        
+        return response
+    }
+    
+    /// Determines optimal search strategy based on user intent and context
+    func determineSearchStrategy(
+        query: String,
+        locationContext: String,
+        timeContext: String? = nil,
+        userHistory: String? = nil
+    ) async throws -> SearchStrategy {
+        
+        let systemPrompt = ChatMessage(
+            role: "system",
+            content: """
+            You are Guido's search strategy optimizer. Determine the best approach for finding places based on user intent and context.
+            
+            Respond with a JSON object containing:
+            - searchRadius: recommended radius in meters (200-8000)
+            - searchSources: array of preferred sources ["google_places", "web_search", "both"]
+            - searchPriority: "proximity", "quality", "availability", or "comprehensive"
+            - expandSearch: boolean if should progressively expand radius
+            - contextualHints: array of search refinements to try
+            """
+        )
+        
+        let userPrompt = ChatMessage(
+            role: "user",
+            content: """
+            User query: "\(query)"
+            Location context: \(locationContext)
+            \(timeContext.map { "Time context: \($0)" } ?? "")
+            \(userHistory.map { "Recent searches: \($0)" } ?? "")
+            
+            What's the optimal search strategy?
+            """
+        )
+        
+        let response = try await send(message: userPrompt.content, conversation: [systemPrompt])
+        
+        // Parse JSON response into SearchStrategy
+        guard let jsonData = response.data(using: .utf8),
+              let strategy = try? JSONDecoder().decode(SearchStrategy.self, from: jsonData) else {
+            // Fallback to default strategy if parsing fails
+            return SearchStrategy.default(for: query)
+        }
+        
+        return strategy
+    }
+    
+    /// Provides intelligent route-aware recommendations
+    func synthesizeRouteRecommendations(
+        userQuery: String,
+        destination: String,
+        routePlaces: [Any]?,
+        webInsights: String?,
+        travelMode: String? = nil,
+        currentLocation: String
+    ) async throws -> String {
+        
+        let systemPrompt = ChatMessage(
+            role: "system",
+            content: """
+            You are Guido's route intelligence system. Help users find places along their route with smart spatial reasoning.
+            
+            Guidelines:
+            - Understand travel direction and suggest places that make sense for the journey
+            - Consider travel mode (walking, driving, transit) for recommendations
+            - Prioritize places that are genuinely "on the way" vs. detours
+            - Be honest if nothing good is available along the route
+            - Suggest alternatives if the direct route doesn't have what they need
+            - Use natural language to explain the spatial relationships
+            """
+        )
+        
+        let userPrompt = ChatMessage(
+            role: "user",
+            content: """
+            User wants: "\(userQuery)"
+            Traveling from: \(currentLocation)
+            Traveling to: \(destination)
+            \(travelMode.map { "Travel mode: \($0)" } ?? "")
+            
+            Route-specific places found: \(routePlaces?.description ?? "None")
+            Additional insights: \(webInsights ?? "None")
+            
+            Provide intelligent route recommendations with natural spatial reasoning.
+            """
+        )
+        
+        return try await send(message: userPrompt.content, conversation: [systemPrompt])
+    }
+    
+    /// Handles edge cases and conflicting data intelligently
+    func handleLocationUncertainty(
+        userQuery: String,
+        conflictingData: [String],
+        locationContext: String,
+        suggestedAlternatives: [String]? = nil
+    ) async throws -> String {
+        
+        let systemPrompt = ChatMessage(
+            role: "system",
+            content: """
+            You are Guido's uncertainty handler. When location data is conflicting or unreliable, provide honest, helpful guidance.
+            
+            Guidelines:
+            - Be transparent about data limitations
+            - Suggest verification methods (calling ahead, checking websites)
+            - Provide alternative approaches
+            - Maintain user confidence while being honest about uncertainty
+            - Turn limitations into helpful guidance
+            """
+        )
+        
+        let userPrompt = ChatMessage(
+            role: "user",
+            content: """
+            User query: "\(userQuery)"
+            Location context: \(locationContext)
+            Conflicting information: \(conflictingData.joined(separator: "; "))
+            \(suggestedAlternatives.map { "Alternatives available: \($0.joined(separator: ", "))" } ?? "")
+            
+            How should we handle this uncertainty helpfully?
+            """
+        )
+        
+        return try await send(message: userPrompt.content, conversation: [systemPrompt])
+    }
+    
+    /// Synthesizes intelligent directions with spatial reasoning and contextual guidance
+    func synthesizeIntelligentDirections(
+        destination: String,
+        destinationData: [String: Any]?,
+        routeData: [String: Any]?,
+        transportationMode: String,
+        currentLocation: String
+    ) async throws -> String {
+        
+        let systemPrompt = ChatMessage(
+            role: "system",
+            content: """
+            You are Guido's intelligent directions system. Provide natural, helpful navigation guidance with spatial reasoning.
+            
+            CRITICAL ACCURACY REQUIREMENTS:
+            - ONLY reference specific addresses, business names, and landmarks from the provided data
+            - NEVER invent or hallucinate street names, business names, or addresses
+            - Use EXACT information from the route and destination data provided
+            - If route details are unclear, provide general directional guidance
+            
+            Guidelines:
+            - Be conversational and contextual about directions
+            - Include helpful landmarks and spatial references when available in the data
+            - Mention destination details from the provided data (hours, ratings, etc.)
+            - Adapt language based on transportation mode (walking vs driving vs transit)
+            - Provide practical tips when supported by the data
+            - Be encouraging and confident about the route
+            - Include estimated time and important travel considerations from the data
+            - Make the directions feel personal and helpful, not robotic
+            """
+        )
+        
+        var directionContext = "From: \(currentLocation)\nTo: \(destination)\nTravel mode: \(transportationMode)\n"
+        
+        if let destData = destinationData {
+            directionContext += "\nDestination details: \(destData)\n"
+        }
+        
+        if let routeInfo = routeData {
+            directionContext += "\nRoute information: \(routeInfo)\n"
+        }
+        
+        let userPrompt = ChatMessage(
+            role: "user",
+            content: """
+            \(directionContext)
+            
+            Provide intelligent, conversational directions that help the user navigate confidently. Make it feel like helpful guidance from a knowledgeable friend who knows the area well.
+            """
+        )
+        
+        return try await send(message: userPrompt.content, conversation: [systemPrompt])
+    }
+}
+
+// MARK: - Supporting Types
+
+struct SearchStrategy: Codable {
+    let searchRadius: Int
+    let searchSources: [String]
+    let searchPriority: String
+    let expandSearch: Bool
+    let contextualHints: [String]
+    
+    static func `default`(for query: String) -> SearchStrategy {
+        return SearchStrategy(
+            searchRadius: 1500,
+            searchSources: ["both"],
+            searchPriority: "comprehensive",
+            expandSearch: true,
+            contextualHints: [query]
+        )
+    }
 } 

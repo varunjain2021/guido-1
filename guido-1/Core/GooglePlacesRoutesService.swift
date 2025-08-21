@@ -9,13 +9,28 @@ class GooglePlacesRoutesService: ObservableObject {
         public let latitude: Double
         public let longitude: Double
         public let distanceMeters: Int
+        public let isOpen: Bool?
+        public let businessStatus: String?
+        public let rating: Double?
+        public let userRatingCount: Int?
+        public let phoneNumber: String?
         
-        public init(name: String, formattedAddress: String, latitude: Double, longitude: Double, distanceMeters: Int) {
+        public init(name: String, formattedAddress: String, latitude: Double, longitude: Double, distanceMeters: Int, isOpen: Bool? = nil, businessStatus: String? = nil, rating: Double? = nil, userRatingCount: Int? = nil, phoneNumber: String? = nil) {
             self.name = name
             self.formattedAddress = formattedAddress
             self.latitude = latitude
             self.longitude = longitude
             self.distanceMeters = distanceMeters
+            self.isOpen = isOpen
+            self.businessStatus = businessStatus
+            self.rating = rating
+            self.userRatingCount = userRatingCount
+            self.phoneNumber = phoneNumber
+        }
+        
+        // Helper to determine if this is a reliable business for LLM decision making
+        public var hasBusinessDetails: Bool {
+            return businessStatus != nil || rating != nil || phoneNumber != nil
         }
     }
     private let apiKey: String
@@ -82,7 +97,7 @@ class GooglePlacesRoutesService: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
-        request.setValue("places.displayName,places.formattedAddress,places.location", forHTTPHeaderField: "X-Goog-FieldMask")
+        request.setValue("places.displayName,places.formattedAddress,places.location,places.currentOpeningHours.openNow,places.businessStatus,places.rating,places.userRatingCount,places.nationalPhoneNumber,places.internationalPhoneNumber", forHTTPHeaderField: "X-Goog-FieldMask")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         let body: [String: Any] = [
@@ -127,10 +142,29 @@ class GooglePlacesRoutesService: ObservableObject {
             let nameText = ((place["displayName"] as? [String: Any])?["text"] as? String) ?? "Unknown"
             let addr = (place["formattedAddress"] as? String) ?? ""
             let dist = computeDistanceMeters(from: origin.coordinate, to: CLLocationCoordinate2D(latitude: lat, longitude: lng))
+            
+            // Extract enhanced business data for LLM intelligence
+            let isOpen = (place["currentOpeningHours"] as? [String: Any])?["openNow"] as? Bool
+            let businessStatus = place["businessStatus"] as? String
+            let rating = place["rating"] as? Double
+            let userRatingCount = place["userRatingCount"] as? Int
+            let phoneNumber = (place["nationalPhoneNumber"] as? String) ?? (place["internationalPhoneNumber"] as? String)
+            
             print("📍 [GooglePlacesService] Found: \(nameText) at \(addr), \(dist)m away")
-            print("   - Origin: \(origin.coordinate.latitude), \(origin.coordinate.longitude)")
-            print("   - Destination: \(lat), \(lng)")
-            return PlaceCandidate(name: nameText, formattedAddress: addr, latitude: lat, longitude: lng, distanceMeters: dist)
+            print("   - Business Status: \(businessStatus ?? "unknown"), Open: \(isOpen?.description ?? "unknown"), Rating: \(rating?.description ?? "none")")
+            
+            return PlaceCandidate(
+                name: nameText, 
+                formattedAddress: addr, 
+                latitude: lat, 
+                longitude: lng, 
+                distanceMeters: dist,
+                isOpen: isOpen,
+                businessStatus: businessStatus,
+                rating: rating,
+                userRatingCount: userRatingCount,
+                phoneNumber: phoneNumber
+            )
         }
         print("✅ [GooglePlacesService] Returning \(candidates.count) valid candidates")
         return candidates
