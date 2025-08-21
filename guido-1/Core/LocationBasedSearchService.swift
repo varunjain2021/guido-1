@@ -43,8 +43,16 @@ class LocationBasedSearchService: ObservableObject {
     // MARK: - Core Search Implementation
     
     private func performLocationSearch(searchQuery: String, type: SearchType) async -> LocationSearchResult {
-        // Check cache first
-        let cacheKey = "\(searchQuery)_\(type.rawValue)"
+        // Build a cache key that includes an approximate geohash (~200m precision)
+        let lat = locationManager.currentLocation?.coordinate.latitude ?? 0
+        let lon = locationManager.currentLocation?.coordinate.longitude ?? 0
+        let quantize: (Double) -> Double = { value in
+            let step = 0.002 // ~200m
+            return (value / step).rounded() * step
+        }
+        let latQ = quantize(lat)
+        let lonQ = quantize(lon)
+        let cacheKey = "\(searchQuery)_\(type.rawValue)_\(latQ)_\(lonQ)"
         if let cachedResult = getCachedResult(for: cacheKey) {
             print("📋 Using cached results for: \(searchQuery)")
             return cachedResult

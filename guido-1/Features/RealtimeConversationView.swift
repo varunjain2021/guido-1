@@ -398,6 +398,9 @@ struct RealtimeConversationView: View {
                     .cornerRadius(12)
                 }
                 
+                // MCP Testing Controls
+                mcpTestingControls
+                
             case .error:
                 Button(action: startConversation) {
                     HStack(spacing: 12) {
@@ -646,6 +649,67 @@ struct RealtimeConversationView: View {
         realtimeService.disconnect()
         viewState = .disconnected
         showConnectionAnimation = false
+    }
+    
+    // MARK: - MCP Testing Controls
+    private var mcpTestingControls: some View {
+        VStack(spacing: 12) {
+            Text("🧪 MCP Testing")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            
+            HStack(spacing: 12) {
+                Button("🧪 Enable MCP Mode") {
+                    Task { @MainActor in
+                        FeatureFlags.shared.migrationState = .hybrid
+                        FeatureFlags.shared.enableMCPForCategory(.location)
+                        FeatureFlags.shared.debugLoggingEnabled = true
+                        FeatureFlags.shared.isPerformanceMonitoringEnabled = true
+                        
+                        print("✅ TESTING: Enabled MCP for location tools")
+                        print("🔍 TESTING: Debug logging enabled")
+                        print("📊 TESTING: Performance monitoring enabled")
+                        print("🎯 TESTING: Migration state: \(FeatureFlags.shared.migrationState.displayName)")
+                    }
+                }
+                .font(.caption)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.green)
+                .foregroundColor(.white)
+                .cornerRadius(6)
+                
+                Button("🔄 Back to Legacy") {
+                    Task { @MainActor in
+                        FeatureFlags.shared.migrationState = .legacy
+                        FeatureFlags.shared.debugLoggingEnabled = true
+                        
+                        print("🔙 TESTING: Reverted to Legacy mode")
+                        print("🎯 TESTING: Migration state: \(FeatureFlags.shared.migrationState.displayName)")
+                    }
+                }
+                .font(.caption)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.orange)
+                .foregroundColor(.white)
+                .cornerRadius(6)
+                
+                Button("🚨 Emergency Rollback") {
+                    Task { @MainActor in
+                        FeatureFlags.shared.emergencyRollbackToLegacy(reason: "User requested emergency rollback")
+                        print("🚨 EMERGENCY ROLLBACK ACTIVATED")
+                    }
+                }
+                .font(.caption)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.red)
+                .foregroundColor(.white)
+                .cornerRadius(6)
+            }
+        }
+        .padding(.top, 8)
     }
 }
 

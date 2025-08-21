@@ -6,5 +6,9 @@
     <string>your-openai-api-key-here</string>
     <key>ElevenLabs_API_Key</key>
     <string>your-elevenlabs-api-key-here</string>
+    <key>Google_API_Key</key>
+    <string>your-google-api-key-here</string>
+    <key>OpenWeather_API_Key</key>
+    <string>your-openweather-api-key-here</string>
 </dict>
 </plist>

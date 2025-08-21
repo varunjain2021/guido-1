@@ -8,6 +8,7 @@
 import Foundation
 import CoreLocation
 import Combine
+import Contacts
 
 @MainActor
 class LocationManager: NSObject, ObservableObject {
@@ -354,22 +355,29 @@ extension LocationManager: CLLocationManagerDelegate {
                 
                 guard let placemark = placemarks?.first else { return }
                 
-                // Extract address components
-                var addressComponents: [String] = []
-                
-                if let subThoroughfare = placemark.subThoroughfare {
-                    addressComponents.append(subThoroughfare)
+                // Prefer Contacts formatter for a complete address when available
+                if let postal = placemark.postalAddress {
+                    let formatter = CNPostalAddressFormatter()
+                    var formatted = CNPostalAddressFormatter.string(from: postal, style: .mailingAddress)
+                    formatted = formatted.replacingOccurrences(of: "\n", with: ", ")
+                    self?.currentAddress = formatted
+                    self?.currentCity = postal.city
+                    self?.currentCountry = postal.country
+                } else {
+                    // Fallback: assemble from available components
+                    var addressComponents: [String] = []
+                    if let subThoroughfare = placemark.subThoroughfare { addressComponents.append(subThoroughfare) }
+                    if let thoroughfare = placemark.thoroughfare { addressComponents.append(thoroughfare) }
+                    if let subLocality = placemark.subLocality { addressComponents.append(subLocality) }
+                    if let locality = placemark.locality { addressComponents.append(locality); self?.currentCity = locality }
+                    if let administrativeArea = placemark.administrativeArea { addressComponents.append(administrativeArea) }
+                    if let postalCode = placemark.postalCode { addressComponents.append(postalCode) }
+                    self?.currentCountry = placemark.country
+                    if addressComponents.isEmpty, let name = placemark.name {
+                        addressComponents.append(name)
+                    }
+                    self?.currentAddress = addressComponents.joined(separator: ", ")
                 }
-                if let thoroughfare = placemark.thoroughfare {
-                    addressComponents.append(thoroughfare)
-                }
-                if let locality = placemark.locality {
-                    addressComponents.append(locality)
-                }
-                
-                self?.currentAddress = addressComponents.joined(separator: ", ")
-                self?.currentCity = placemark.locality
-                self?.currentCountry = placemark.country
                 
                 print("📍 Address: \(self?.currentAddress ?? "Unknown")")
             }

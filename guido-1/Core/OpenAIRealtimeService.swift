@@ -293,7 +293,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
 
     
     // Tool management
-    @Published var toolManager = RealtimeToolManager()
+    @Published var toolManager = MCPToolCoordinator()
     
     // Event handling
     private var eventSubscriptions = Set<AnyCancellable>()
@@ -674,6 +674,24 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         // Initialize OpenAI Chat service
         let openAIChatService = OpenAIChatService(apiKey: self.apiKey)
         toolManager.setOpenAIChatService(openAIChatService)
+        
+        // Initialize Google Places/Routes service if key available in Config.plist
+        if let configPath = Bundle.main.path(forResource: "Config", ofType: "plist"),
+           let configDict = NSDictionary(contentsOfFile: configPath),
+           let googleKey = configDict["Google_API_Key"] as? String, !googleKey.isEmpty {
+            let googleService = GooglePlacesRoutesService(apiKey: googleKey, locationManager: manager)
+            toolManager.setGooglePlacesRoutesService(googleService)
+            
+            // Travel services
+            let weatherKey = (configDict["OpenWeather_API_Key"] as? String) ?? ""
+            let weatherService = WeatherService(apiKey: weatherKey)
+            let currencyService = CurrencyService()
+            let translationService = TranslationService(openAIChatService: openAIChatService)
+            let travelReqService = TravelRequirementsService()
+            toolManager.setTravelServices(weather: weatherService, currency: currencyService, translation: translationService, travelRequirements: travelReqService)
+        } else {
+            print("⚠️ Google API Key missing; Google Places/Routes not enabled")
+        }
     }
     
     // MARK: - Connection Management
@@ -824,7 +842,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 temperature: 0.75,
                 maxResponseOutputTokens: "inf",
                 toolChoice: "auto",
-                tools: RealtimeToolManager.getAllToolDefinitions()
+                tools: MCPToolCoordinator.getAllToolDefinitions()
             )
         )
         
