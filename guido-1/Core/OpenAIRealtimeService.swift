@@ -661,6 +661,11 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         print("🔇 Streaming control - already handled by connection state")
     }
     
+    /// Clear conversation history
+    func clearConversation() {
+        conversation.removeAll()
+    }
+    
     func setLocationManager(_ manager: LocationManager) {
         toolManager.setLocationManager(manager)
         

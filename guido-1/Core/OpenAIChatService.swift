@@ -143,6 +143,36 @@ class OpenAIChatService {
         let chatResponse = try JSONDecoder().decode(ChatCompletionResponse.self, from: data)
         return chatResponse.choices.first?.message.content ?? ""
     }
+    
+    func generateStructuredData(prompt: String) async throws -> String {
+        let url = URL(string: "https://api.openai.com/v1/chat/completions")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let messages = [
+            ["role": "system", "content": "You are a data extraction assistant. Extract structured information from text and return it as valid JSON only. Do not include any explanations or additional text."],
+            ["role": "user", "content": prompt]
+        ]
+
+        let requestBody: [String: Any] = [
+            "model": "gpt-4o",
+            "messages": messages,
+            "max_tokens": 500,
+            "temperature": 0.1  // Low temperature for consistent structured output
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw NSError(domain: "OpenAIChatService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Failed to generate structured data."])
+        }
+
+        let chatResponse = try JSONDecoder().decode(ChatCompletionResponse.self, from: data)
+        return chatResponse.choices.first?.message.content ?? ""
+    }
 }
 
 // MARK: - Data Models
