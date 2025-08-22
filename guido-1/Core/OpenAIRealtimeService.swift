@@ -1100,9 +1100,9 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 isAIResponding = false
                 
                 // Reset playback queue to allow user input
-                audioPlayerLock.lock()
-                isPlayingQueue = false
-                audioPlayerLock.unlock()
+                await MainActor.run {
+                    isPlayingQueue = false
+                }
                 
                 // Clear any residual audio buffer that might cause transcription issues
                 await clearInputAudioBuffer()

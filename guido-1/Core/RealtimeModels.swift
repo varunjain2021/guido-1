@@ -20,7 +20,7 @@ struct RealtimeMessage: Identifiable, Codable, Equatable {
         case role, content, timestamp, isStreaming
     }
     
-    static func == (lhs: RealtimeMessage, rhs: RealtimeMessage) -> Bool {
+    static func == (lhs: Self, rhs: Self) -> Bool {
         return lhs.id == rhs.id
     }
 }
