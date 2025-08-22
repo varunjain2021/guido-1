@@ -62,6 +62,10 @@ struct CroatianBeachConversationView: View {
         }
         .onAppear {
             locationManager.requestLocationPermission()
+            // Configure audio feedback for Croatian beach theme
+            realtimeService.audioFeedbackManager.setEnabled(true)
+            realtimeService.audioFeedbackManager.setVolume(0.7)
+            realtimeService.audioFeedbackManager.realtimeService = realtimeService
         }
     }
     

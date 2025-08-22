@@ -121,8 +121,8 @@ struct SessionUpdateEvent: Codable {
                 } else {
                     self.type = "server_vad"
                     self.eagerness = nil
-                    // Use optimized threshold for better speech detection
-                    self.threshold = OpenAIRealtimeService.VADConfig.serverThreshold
+                    // Use optimized threshold for better speech detection  
+                    self.threshold = round(OpenAIRealtimeService.VADConfig.serverThreshold * 10) / 10
                     self.silenceDurationMs = OpenAIRealtimeService.VADConfig.serverSilenceDuration
                     self.prefixPaddingMs = OpenAIRealtimeService.VADConfig.serverPrefixPadding
                 }
@@ -242,14 +242,14 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     fileprivate enum VADConfig {
         static let useSemanticVAD = false  // Use server VAD for reliable turn detection
         static let semanticEagerness = "medium"  
-        // Simple VAD settings - trust OpenAI defaults with minimal changes
-        static let serverThreshold: Double = 0.5  // Default threshold
-        static let serverSilenceDuration = 500   // Default silence duration
-        static let serverPrefixPadding = 200     // Default prefix padding
+        // Simple VAD settings - keeping default sensitivity for natural conversation
+        static let serverThreshold: Double = 0.5  // Standard threshold for responsive detection
+        static let serverSilenceDuration = 500   // Standard silence duration for natural flow
+        static let serverPrefixPadding = 300     // Longer padding for better detection
         
         // Minimum speech duration threshold (easily adjustable for testing)
         // Original: 0.6s | Testing: 0.3s | Revert to 0.6s if issues arise
-        static let minimumSpeechDuration: Double = 0.6
+        static let minimumSpeechDuration: Double = 0.5  // Longer minimum to prevent chime detection
     }
     @Published var isConnected = false
     @Published var connectionStatus = "Disconnected"
@@ -273,6 +273,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     private let apiKey: String
     private var webSocketTask: URLSessionWebSocketTask?
     private var urlSession: URLSession
+
     
     // Audio capture and playback - moved from RealtimeAudioManager
     private var audioEngine: AVAudioEngine?
@@ -294,6 +295,9 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     
     // Tool management
     @Published var toolManager = MCPToolCoordinator()
+    
+    // Audio feedback management
+    @Published var audioFeedbackManager = AudioFeedbackManager()
     
     // Event handling
     private var eventSubscriptions = Set<AnyCancellable>()
@@ -321,6 +325,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         eventSubscriptions.removeAll()
         print("🗑️ OpenAI Realtime Service deallocated")
     }
+    
+
     
     // MARK: - Audio Session Setup
     private func setupAudioSession() {
@@ -396,13 +402,20 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     }
     
     private func stopAudioCapture() {
+        // Stop audio playback first
+        stopAudioPlayback()
+        
+        // Remove tap from input node
         inputNode?.removeTap(onBus: 0)
-        audioEngine?.stop()
+        
+        // Stop audio engine safely
+        if let engine = audioEngine, engine.isRunning {
+            engine.stop()
+        }
+        
+        // Clear references
         audioEngine = nil
         inputNode = nil
-        
-        // Stop streaming audio playback
-        stopAudioPlayback()
         
         print("🔇 Audio capture and playback stopped")
     }
@@ -737,13 +750,16 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         // Start audio capture
         startAudioCapture()
         
+        // Play connection sound
+        audioFeedbackManager.playConnectionSound()
+        
         print("✅ [CONNECT] Connected to OpenAI Realtime API")
     }
     
     func disconnect() {
         print("🔌 Disconnecting from OpenAI Realtime API...")
         
-        // Stop audio capture
+        // Stop audio capture first to prevent engine issues
         stopAudioCapture()
         
         // Stop audio streaming immediately
@@ -752,7 +768,6 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         
         // Clear speech tracking state
         speechStartTime = 0
-
         
         // Close WebSocket connection
         webSocketTask?.cancel(with: .goingAway, reason: nil)
@@ -760,7 +775,13 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         isConnected = false
         connectionStatus = "Disconnected"
         
-        // Audio cleanup is handled in stopAudioCapture()
+        // Stop audio feedback after main audio systems are stopped
+        audioFeedbackManager.stopThinkingSound()
+        
+        // Play disconnection sound with a small delay to avoid conflicts
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.audioFeedbackManager.playDisconnectionSound()
+        }
         
         print("✅ Disconnected from OpenAI Realtime API")
     }
@@ -814,8 +835,11 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 - Be concise but informative
                 - Respond quickly and smoothly for natural conversation flow
                 - Use your tools proactively to provide personalized recommendations
+                - IMPORTANT: You have access to the user's current location through the get_user_location tool. ALWAYS call this first when you need location data. If clarification is needed, present a hypothesis based on the location data (e.g., "I see you're at [address] - shall I give you directions from there?")
                 - When appropriate, check the user's location, nearby places, weather, and other contextual information
                 - Offer specific, actionable suggestions based on real data
+                - ALWAYS briefly acknowledge before using tools with phrases like "let me check that for you", "let me find that information", or "give me a moment to look that up" - this provides important user feedback during processing
+                - After using tools and getting results, naturally transition into sharing the information without additional artificial completion sounds
                 
                 Available Tools:
                 - Location tracking and movement detection
@@ -837,7 +861,14 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 
                 Use these tools naturally in conversation to provide the most helpful and personalized travel experience.
                 
-                IMPORTANT: Engage in natural conversation flow. The system uses voice activity detection to understand when you should respond. Trust the turn-taking system and respond naturally when prompted.
+                IMPORTANT: 
+                - Engage in natural conversation flow. The system uses voice activity detection to understand when you should respond. Trust the turn-taking system and respond naturally when prompted.
+                - CRITICAL AUDIO FEEDBACK PATTERN: When you need to use tools, ALWAYS follow this sequence:
+                  1. First, speak an acknowledgment like "let me check that for you" or "let me look that up"
+                  2. Then call your tools (ALWAYS call get_user_location first if you need location data)
+                  3. Finally, naturally share the results when tools complete
+                - NEVER ask users "where are you?" - instead, get their location automatically and present a hypothesis for confirmation if needed (e.g., "I see you're near Riverside Boulevard - is that where you'd like directions from?")
+                - This verbal feedback replaces artificial beeps and provides natural user experience
                 """,
                 voice: "alloy",
                 inputAudioFormat: "pcm16",
@@ -1046,6 +1077,11 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 // Clear any residual audio buffer that might cause transcription issues
                 await clearInputAudioBuffer()
                 
+                // Wait for audio playback to actually complete before playing completion sound
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                    self?.audioFeedbackManager.playCompletionSound()
+                }
+                
                 print("✅ [AI_AUDIO] AI audio completed - buffer cleared - ready for user input")
                 // Notify audio manager that streaming should finish
                 NotificationCenter.default.post(name: .realtimeAudioStreamCompleted, object: nil)
@@ -1088,6 +1124,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 
                 // Let server VAD handle all speech detection - trust OpenAI's optimized algorithms
                 
+
+                
                 // Ignore very short utterances that Whisper often mis-transcribes
                 if speechDuration < VADConfig.minimumSpeechDuration {
                     print("⚠️ [VAD] Speech too short (\(String(format: "%.2f", speechDuration))s) – ignored (threshold: \(VADConfig.minimumSpeechDuration)s)")
@@ -1111,6 +1149,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             case "response.created":
                 print("🤖 AI response created")
                 conversationState = .thinking
+                // Play thinking sound when AI starts processing
+                audioFeedbackManager.playThinkingSound()
                 
             case "response.output_item.added":
                 print("📝 Response output item added")
@@ -1132,6 +1172,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 
             case "response.function_call_arguments.done":
                 print("🔧 Function call arguments completed")
+                // Give additional thinking feedback for complex tool usage
                 await handleFunctionCall(eventData)
                 
             case "error":
