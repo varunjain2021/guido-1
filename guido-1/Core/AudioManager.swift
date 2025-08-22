@@ -103,7 +103,7 @@ class AudioManager: NSObject, ObservableObject {
             try audioSession.setCategory(
                 .playAndRecord,
                 mode: .voiceChat,
-                options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker]
+                options: [.allowBluetooth, .allowBluetoothA2DP]
             )
             try audioSession.setActive(true)
             

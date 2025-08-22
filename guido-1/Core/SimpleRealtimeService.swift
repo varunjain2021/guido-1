@@ -51,9 +51,9 @@ class SimpleRealtimeService: NSObject, ObservableObject {
     
     private func setupAudioSession() {
         do {
-            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker])
+            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP])
             try audioSession.setActive(true)
-            print("✅ Audio session configured for WebRTC")
+            print("✅ Audio session configured for WebRTC with headphone support")
         } catch {
             print("❌ Failed to setup audio session: \(error)")
         }

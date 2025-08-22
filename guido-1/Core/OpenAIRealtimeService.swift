@@ -337,9 +337,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     // MARK: - Audio Session Setup
     private func setupAudioSession() {
         do {
-            // Configure for optimized voice input with enhanced microphone sensitivity
+            // Configure for optimized voice input with headphone support
             try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [
-                .defaultToSpeaker, 
                 .allowBluetoothA2DP, 
                 .allowBluetooth,
                 .mixWithOthers
