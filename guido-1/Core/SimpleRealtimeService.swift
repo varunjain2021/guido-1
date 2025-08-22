@@ -137,7 +137,7 @@ class SimpleRealtimeService: NSObject, ObservableObject {
         
         let body = [
             "model": "gpt-4o-realtime-preview-2024-12-17",
-            "voice": "alloy"
+            "voice": "coral"
         ]
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body)

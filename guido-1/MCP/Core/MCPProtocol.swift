@@ -54,9 +54,15 @@ public struct JSONRPCRequest: Codable {
         try container.encode(method, forKey: .method)
         
         if let params = params {
-            let paramsData = try JSONSerialization.data(withJSONObject: params)
+            // Sanitize params to ensure all values are JSON-serializable
+            let sanitizedParams = sanitizeParamsForJSON(params)
+            let paramsData = try JSONSerialization.data(withJSONObject: sanitizedParams)
             try container.encode(paramsData, forKey: .params)
         }
+    }
+    
+    private func sanitizeParamsForJSON(_ params: [String: Any]) -> [String: Any] {
+        return JSONSanitizer.sanitizeDictionary(params)
     }
 }
 
@@ -302,9 +308,15 @@ public struct MCPCallToolRequest: Codable {
         try container.encode(name, forKey: .name)
         
         if let arguments = arguments {
-            let argsData = try JSONSerialization.data(withJSONObject: arguments)
+            // Sanitize arguments to ensure all values are JSON-serializable
+            let sanitizedArguments = sanitizeArgumentsForJSON(arguments)
+            let argsData = try JSONSerialization.data(withJSONObject: sanitizedArguments)
             try container.encode(argsData, forKey: .arguments)
         }
+    }
+    
+    private func sanitizeArgumentsForJSON(_ arguments: [String: Any]) -> [String: Any] {
+        return JSONSanitizer.sanitizeDictionary(arguments)
     }
 }
 
@@ -365,6 +377,41 @@ public enum MCPErrorCode: Int {
     case serverError = -32000
     case methodNotAllowed = -32001
     case invalidToolName = -32002
+}
+
+// MARK: - JSON Sanitization Utility
+
+private struct JSONSanitizer {
+    static func sanitizeDictionary(_ dictionary: [String: Any]) -> [String: Any] {
+        var sanitized: [String: Any] = [:]
+        
+        for (key, value) in dictionary {
+            sanitized[key] = sanitizeValue(value)
+        }
+        
+        return sanitized
+    }
+    
+    static func sanitizeValue(_ value: Any) -> Any {
+        switch value {
+        case let stringValue as String:
+            return stringValue
+        case let numberValue as NSNumber:
+            return numberValue
+        case let boolValue as Bool:
+            return boolValue
+        case let arrayValue as [Any]:
+            return arrayValue.map { sanitizeValue($0) }
+        case let dictValue as [String: Any]:
+            return sanitizeDictionary(dictValue)
+        case is NSNull:
+            return NSNull()
+        default:
+            // Convert any other type to string representation
+            // This handles enum cases like "any" that aren't properly quoted
+            return String(describing: value)
+        }
+    }
 }
 
 // MARK: - Protocol Extensions

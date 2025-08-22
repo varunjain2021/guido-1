@@ -262,6 +262,12 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     private var lastClearBufferTime: TimeInterval = 0
     private var lastResponseCompleteTime: TimeInterval = 0
     
+    // MARK: - Enhanced Tool Call Interruption State
+    private var isToolExecuting = false
+    private var currentResponseId: String?
+    private var pendingToolCalls: Set<String> = []
+    private var lastToolStartTime: TimeInterval = 0
+    
     enum ConversationState {
         case idle
         case listening
@@ -455,6 +461,12 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         private func playAudio(data: Data) {
         audioPlayerLock.lock()
         defer { audioPlayerLock.unlock() }
+        
+        // Final interruption check - don't queue audio if user interrupted
+        if conversationState == .listening {
+            print("🛑 [AUDIO] Refusing to queue audio - user interrupted")
+            return
+        }
 
         // Mark playback queue as active when we start receiving audio
         if !isPlayingQueue {
@@ -769,6 +781,17 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         // Clear speech tracking state
         speechStartTime = 0
         
+        // CLEANUP TOOL EXECUTION STATE
+        if isToolExecuting || !pendingToolCalls.isEmpty {
+            print("🔌 [DISCONNECT] Cleaning up tool execution state")
+            print("🔌 [DISCONNECT] Was executing: \(isToolExecuting), Pending calls: \(pendingToolCalls.count)")
+        }
+        isToolExecuting = false
+        pendingToolCalls.removeAll()
+        currentResponseId = nil
+        lastToolStartTime = 0
+        print("🔌 [DISCONNECT] Tool execution state reset")
+        
         // Close WebSocket connection
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         webSocketTask = nil
@@ -799,7 +822,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         
         let requestBody = [
             "model": "gpt-4o-realtime-preview-2025-06-03",
-            "voice": "alloy"
+            "voice": "coral"
         ]
         
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
@@ -868,9 +891,10 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                   2. Then call your tools (ALWAYS call get_user_location first if you need location data)
                   3. Finally, naturally share the results when tools complete
                 - NEVER ask users "where are you?" - instead, get their location automatically and present a hypothesis for confirmation if needed (e.g., "I see you're near Riverside Boulevard - is that where you'd like directions from?")
+                - INTERRUPTION AWARENESS: When a user interrupts you mid-response, acknowledge what you were doing before switching context. For example: "Oh, I was just about to tell you about those dessert places, but let me help you find lunch options instead" or "I see you want something different - let me switch from dessert to lunch recommendations"
                 - This verbal feedback replaces artificial beeps and provides natural user experience
                 """,
-                voice: "alloy",
+                voice: "coral",
                 inputAudioFormat: "pcm16",
                 outputAudioFormat: "pcm16",
                 inputAudioTranscription: SessionUpdateEvent.SessionConfig.TranscriptionConfig(),
@@ -1052,6 +1076,12 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 
             case "response.audio.delta":
                 if let audioEvent = try? JSONDecoder().decode(AudioDeltaEvent.self, from: eventData) {
+                    // Check if we're in an interrupted state - ignore audio if so
+                    if conversationState == .listening {
+                        print("🛑 [AI_AUDIO] Ignoring audio delta - user has interrupted")
+                        return
+                    }
+                    
                     // Enable feedback prevention IMMEDIATELY on first audio chunk
                     if !isAIResponding {
                         print("🎤 [AI_AUDIO] First AI audio delta - setting isAIResponding=true")
@@ -1088,7 +1118,26 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 
             case "response.done":
                 lastResponseCompleteTime = Date().timeIntervalSince1970
-                print("✅ [RESPONSE] Response completed at \(lastResponseCompleteTime) - resetting state")
+                
+                // Extract response completion details
+                var completionInfo = "unknown"
+                if let responseData = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any] {
+                    if let responseId = responseData["id"] as? String {
+                        completionInfo = "ID: \(responseId)"
+                        // Clear current response ID if it matches
+                        if currentResponseId == responseId {
+                            currentResponseId = nil
+                            print("🔄 [RESPONSE] Cleared current response ID: \(responseId)")
+                        }
+                    }
+                    if let status = responseData["status"] as? String {
+                        completionInfo += ", status: \(status)"
+                    }
+                }
+                
+                print("✅ [RESPONSE] Response completed at \(lastResponseCompleteTime) (\(completionInfo))")
+                print("✅ [RESPONSE] Final state: tool executing=\(isToolExecuting), pending tools=\(pendingToolCalls.count)")
+                
                 isAIResponding = false
                 conversationState = .idle  // Reset to idle - let server VAD manage state
                 
@@ -1096,25 +1145,57 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 speechStartTime = 0
                 print("🔄 [RESPONSE] Ready for next speech input")
                 
+            case "response.cancelled":
+                let cancelTime = Date().timeIntervalSince1970
+                var cancelInfo = "unknown"
+                if let responseData = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any] {
+                    if let responseId = responseData["id"] as? String {
+                        cancelInfo = "ID: \(responseId)"
+                        // Clear current response ID if it matches
+                        if currentResponseId == responseId {
+                            currentResponseId = nil
+                            print("🔄 [CANCEL] Cleared cancelled response ID: \(responseId)")
+                        }
+                    }
+                }
+                
+                print("❌ [CANCEL] Response cancelled at \(cancelTime) (\(cancelInfo))")
+                print("❌ [CANCEL] State at cancellation: tool executing=\(isToolExecuting), pending tools=\(pendingToolCalls.count)")
+                
+                isAIResponding = false
+                conversationState = .listening  // Back to listening after cancellation
+                
             case "input_audio_buffer.speech_started":
                 let currentTime = Date().timeIntervalSince1970
                 let timeSinceLastResponse = lastResponseCompleteTime > 0 ? currentTime - lastResponseCompleteTime : 0
                 let timeSinceLastClear = lastClearBufferTime > 0 ? currentTime - lastClearBufferTime : 0
-                print("🗣️ [VAD] Speech started detected by VAD at \(currentTime)")
-                print("🗣️ [VAD] Previous speech start: \(speechStartTime), AI responding: \(isAIResponding), playing: \(isPlayingQueue)")
-                print("🗣️ [VAD] Time since last response: \(timeSinceLastResponse)s, since last buffer clear: \(timeSinceLastClear)s")
+                let timeSinceToolStart = lastToolStartTime > 0 ? currentTime - lastToolStartTime : 0
                 
-                // Log if speech starts during audio playback (might be user interruption or feedback)
-                if isPlayingQueue && timeSinceLastResponse < 2.0 {
-                    print("⚠️ [VAD] Speech started during audio playback - could be user interruption or feedback")
+                print("🗣️ [VAD] Speech started detected by VAD at \(currentTime)")
+                print("🗣️ [VAD] Current state: AI responding=\(isAIResponding), playing=\(isPlayingQueue), tool executing=\(isToolExecuting)")
+                print("🗣️ [VAD] Time since: last response=\(String(format: "%.2f", timeSinceLastResponse))s, buffer clear=\(String(format: "%.2f", timeSinceLastClear))s, tool start=\(String(format: "%.2f", timeSinceToolStart))s")
+                print("🗣️ [VAD] Pending tool calls: \(pendingToolCalls.count), Response ID: \(currentResponseId ?? "none")")
+                
+                // ENHANCED INTERRUPTION DETECTION
+                // Check if we need to interrupt ongoing AI activity (response, audio playback, or tool execution)
+                let shouldInterrupt = isAIResponding || isPlayingQueue || isToolExecuting
+                
+                if shouldInterrupt {
+                    if isToolExecuting {
+                        print("🛑 [INTERRUPT] User speaking during tool execution - \(pendingToolCalls.count) tools pending")
+                    } else if isAIResponding {
+                        print("🛑 [INTERRUPT] User speaking during AI response generation")
+                    } else if isPlayingQueue {
+                        print("🛑 [INTERRUPT] User speaking during audio playback")
+                    }
+                    
+                    await handleUserInterruption()
+                } else {
+                    print("🗣️ [VAD] Speech started during idle state - normal turn taking")
                 }
                 
                 speechStartTime = currentTime
                 conversationState = .listening
-                
-                // Server VAD handles speech timeouts automatically
-                
-                // Let server VAD handle interruptions automatically - no manual intervention needed
                 
             case "input_audio_buffer.speech_stopped":
                 let currentTime = Date().timeIntervalSince1970
@@ -1147,7 +1228,15 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 print("💬 Conversation item created")
                 
             case "response.created":
-                print("🤖 AI response created")
+                // Extract response ID for tracking
+                if let responseData = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any],
+                   let responseId = responseData["id"] as? String {
+                    currentResponseId = responseId
+                    print("🤖 [RESPONSE] AI response created with ID: \(responseId)")
+                } else {
+                    print("🤖 [RESPONSE] AI response created (no ID extracted)")
+                }
+                
                 conversationState = .thinking
                 // Play thinking sound when AI starts processing
                 audioFeedbackManager.playThinkingSound()
@@ -1171,8 +1260,26 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 print("🔧 Function call arguments delta received")
                 
             case "response.function_call_arguments.done":
-                print("🔧 Function call arguments completed")
-                // Give additional thinking feedback for complex tool usage
+                // Extract call ID for tool execution tracking
+                let currentTime = Date().timeIntervalSince1970
+                
+                if let json = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any],
+                   let callId = json["call_id"] as? String,
+                   let toolName = json["name"] as? String {
+                    
+                    pendingToolCalls.insert(callId)
+                    isToolExecuting = true
+                    lastToolStartTime = currentTime
+                    
+                    print("🔧 [TOOL] Function call arguments completed - starting execution")
+                    print("🔧 [TOOL] Tool: \(toolName), Call ID: \(callId)")
+                    print("🔧 [TOOL] Now tracking \(pendingToolCalls.count) pending tool call(s): \(Array(pendingToolCalls))")
+                    print("🔧 [TOOL] Tool execution state: isToolExecuting=\(isToolExecuting)")
+                } else {
+                    print("🔧 [TOOL] Function call arguments completed (could not extract call ID)")
+                }
+                
+                // Execute the function call
                 await handleFunctionCall(eventData)
                 
             case "error":
@@ -1218,6 +1325,12 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     }
     
     private func handleAudioDelta(_ base64Audio: String) async {
+        // Double-check interruption state before processing audio
+        if conversationState == .listening {
+            print("🛑 [AI_AUDIO] Skipping audio delta - user interrupted")
+            return
+        }
+        
         guard let audioData = Data(base64Encoded: base64Audio) else {
             print("❌ Failed to decode base64 audio")
             return
@@ -1372,28 +1485,60 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     }
     
     private func handleUserInterruption() async {
-        print("🛑 [INTERRUPT] Handling user interruption - stopping AI immediately")
-        print("🛑 [INTERRUPT] State before: isAIResponding=\(isAIResponding), speechStartTime=\(speechStartTime)")
+        let interruptTime = Date().timeIntervalSince1970
+        print("🛑 [INTERRUPT] === USER INTERRUPTION DETECTED ===")
+        print("🛑 [INTERRUPT] Time: \(interruptTime)")
+        print("🛑 [INTERRUPT] State before: AI responding=\(isAIResponding), playing=\(isPlayingQueue), tool executing=\(isToolExecuting)")
+        print("🛑 [INTERRUPT] Pending tools: \(pendingToolCalls.count) - \(Array(pendingToolCalls))")
+        print("🛑 [INTERRUPT] Current response ID: \(currentResponseId ?? "none")")
         
-        // Set state immediately to prevent further audio processing
+        // 1. IMMEDIATE STATE UPDATES
         isAIResponding = false
+        print("🛑 [INTERRUPT] Step 1: Set isAIResponding=false")
         
-        // Stop audio streaming immediately (not graceful completion)
+        // 2. STOP AUDIO STREAMING IMMEDIATELY
+        // Stop client-side audio playback first for immediate feedback
+        stopAudioPlayback()
+        print("🛑 [INTERRUPT] Step 2: Stopped client-side audio playback immediately")
+        
+        // Notify other components
         NotificationCenter.default.post(name: .realtimeAudioStreamInterrupted, object: nil)
+        print("🛑 [INTERRUPT] Step 2: Posted audio stream interruption notification")
         
-        // Cancel current AI response
-        await cancelResponse()
-        print("🛑 [INTERRUPT] AI response cancelled")
+        // 3. CANCEL ACTIVE AI RESPONSE
+        if let responseId = currentResponseId {
+            print("🛑 [INTERRUPT] Step 3: Cancelling response ID: \(responseId)")
+            await cancelResponse()
+            currentResponseId = nil
+            print("🛑 [INTERRUPT] Step 3: AI response cancelled and ID cleared")
+        } else {
+            print("🛑 [INTERRUPT] Step 3: No active response to cancel")
+        }
         
-        // Clear output audio buffer to stop AI speech immediately
+        // 4. CLEAR AUDIO BUFFERS
         await clearOutputAudioBuffer()
-        print("🛑 [INTERRUPT] Output buffer cleared")
+        print("🛑 [INTERRUPT] Step 4: Output buffer cleared")
         
-        // Clear input buffer to start fresh
         await clearInputAudioBuffer()
-        print("🛑 [INTERRUPT] Input buffer cleared")
+        print("🛑 [INTERRUPT] Step 4: Input buffer cleared")
         
-        print("🔄 [INTERRUPT] Interruption handled - ready for user input")
+        // 5. HANDLE TOOL EXECUTION STATE
+        if isToolExecuting {
+            let toolInterruptTime = lastToolStartTime > 0 ? interruptTime - lastToolStartTime : 0
+            print("🛑 [INTERRUPT] Step 5: Tool execution in progress (\(String(format: "%.2f", toolInterruptTime))s since start)")
+            print("🛑 [INTERRUPT] Step 5: Allowing tools to complete naturally to prevent data corruption")
+            print("🛑 [INTERRUPT] Step 5: Tool results will be available for next user interaction")
+            // NOTE: We don't cancel tool execution as it could cause data corruption
+            // Tools will complete and update their tracking state naturally
+        } else {
+            print("🛑 [INTERRUPT] Step 5: No active tool execution to handle")
+        }
+        
+        // 6. RESET CONVERSATION STATE
+        conversationState = .listening
+        print("🛑 [INTERRUPT] Step 6: Set conversation state to listening")
+        
+        print("🔄 [INTERRUPT] === INTERRUPTION COMPLETE - READY FOR NEW INPUT ===")
     }
     
 
@@ -1407,24 +1552,65 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             guard let callId = json?["call_id"] as? String,
                   let name = json?["name"] as? String,
                   let argumentsString = json?["arguments"] as? String else {
-                print("❌ Invalid function call event format")
+                print("❌ [TOOL] Invalid function call event format")
                 return
             }
             
-            print("🔧 Executing function: \(name) with ID: \(callId)")
+            let executionStartTime = Date().timeIntervalSince1970
+            print("🔧 [TOOL] Starting execution: \(name) with ID: \(callId)")
+            print("🔧 [TOOL] Execution started at: \(executionStartTime)")
             
             // Parse arguments
             let argumentsData = Data(argumentsString.utf8)
             let arguments = try JSONSerialization.jsonObject(with: argumentsData) as? [String: Any] ?? [:]
+            print("🔧 [TOOL] Raw arguments string: \(argumentsString)")
+            print("🔧 [TOOL] Parsed arguments: \(arguments)")
+            
+            // Validate arguments are JSON-serializable to prevent crashes
+            do {
+                _ = try JSONSerialization.data(withJSONObject: arguments)
+                print("🔧 [TOOL] Arguments validation: ✅ JSON-serializable")
+            } catch {
+                print("⚠️ [TOOL] Arguments validation: ❌ Not JSON-serializable - \(error)")
+                print("🔧 [TOOL] This may cause issues downstream in MCP serialization")
+            }
             
             // Execute the tool
             let result = await toolManager.executeTool(name: name, parameters: arguments)
+            
+            let executionEndTime = Date().timeIntervalSince1970
+            let executionDuration = executionEndTime - executionStartTime
+            print("🔧 [TOOL] Completed execution: \(name) in \(String(format: "%.2f", executionDuration))s")
+            print("🔧 [TOOL] Result success: \(result.success)")
+            
+            // Mark tool as completed and update tracking state
+            pendingToolCalls.remove(callId)
+            print("🔧 [TOOL] Removed call ID \(callId) from tracking")
+            print("🔧 [TOOL] Remaining pending tools: \(pendingToolCalls.count) - \(Array(pendingToolCalls))")
+            
+            if pendingToolCalls.isEmpty {
+                isToolExecuting = false
+                print("🔧 [TOOL] All tool calls completed - isToolExecuting=\(isToolExecuting)")
+            } else {
+                print("🔧 [TOOL] Still waiting for \(pendingToolCalls.count) tool(s) to complete")
+            }
             
             // Send tool response back to OpenAI
             await sendToolResponse(callId: callId, result: result)
             
         } catch {
-            print("❌ Failed to handle function call: \(error)")
+            print("❌ [TOOL] Failed to handle function call: \(error)")
+            // Clean up tracking state on error
+            if let json = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any],
+               let callId = json["call_id"] as? String {
+                pendingToolCalls.remove(callId)
+                print("🔧 [TOOL] Cleaned up failed call ID: \(callId)")
+            }
+            
+            if pendingToolCalls.isEmpty {
+                isToolExecuting = false
+                print("🔧 [TOOL] Reset tool execution state after error")
+            }
         }
     }
     
