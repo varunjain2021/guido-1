@@ -83,6 +83,16 @@ class AppState: ObservableObject {
         }
     }
 
+    func updateProfile(firstName: String, lastName: String) async -> Result<Void, Error> {
+        do {
+            try await authService.updateProfile(firstName: firstName, lastName: lastName)
+            self.authStatus = await authService.currentStatus()
+            return .success(())
+        } catch {
+            return .failure(error)
+        }
+    }
+
     func signInWithGoogle() async -> Result<Void, Error> {
         do {
             try await authService.signInWithGoogle()

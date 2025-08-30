@@ -13,10 +13,21 @@ import Supabase
 #if canImport(GoTrue)
 import GoTrue
 #endif
+#if canImport(Auth)
+import Auth
+#endif
+
+#if canImport(GoTrue)
+typealias SupaUser = GoTrue.User
+#elseif canImport(Auth)
+typealias SupaUser = Auth.User
+#endif
 
 struct UserAccount: Equatable {
     let id: String
     let email: String?
+    let firstName: String?
+    let lastName: String?
 }
 
 struct AuthStatus: Equatable {
@@ -29,6 +40,7 @@ protocol AuthService {
     func currentStatus() async -> AuthStatus
     func signIn(email: String, password: String) async throws
     func signUp(email: String, password: String) async throws
+    func updateProfile(firstName: String, lastName: String) async throws
     func signInWithGoogle() async throws
     func signOut() async throws
     func handleOpenURL(_ url: URL) async
@@ -50,10 +62,17 @@ final class SupabaseAuthService: AuthService {
         #if canImport(Supabase)
         if let client = try? buildClient() {
             if let user = client.auth.currentUser {
+                #if canImport(GoTrue) || canImport(Auth)
                 return AuthStatus(
                     isAuthenticated: true,
-                    user: UserAccount(id: user.id.uuidString, email: user.email)
+                    user: buildUserAccount(from: user)
                 )
+                #else
+                return AuthStatus(
+                    isAuthenticated: true,
+                    user: UserAccount(id: user.id.uuidString, email: user.email, firstName: nil, lastName: nil)
+                )
+                #endif
             }
         }
         #endif
@@ -66,7 +85,7 @@ final class SupabaseAuthService: AuthService {
         _ = try await client.auth.signIn(email: email, password: password)
         #else
         // Mock for build safety without SDK
-        cachedStatus = AuthStatus(isAuthenticated: true, user: UserAccount(id: UUID().uuidString, email: email))
+        cachedStatus = AuthStatus(isAuthenticated: true, user: UserAccount(id: UUID().uuidString, email: email, firstName: nil, lastName: nil))
         #endif
     }
 
@@ -75,8 +94,31 @@ final class SupabaseAuthService: AuthService {
         let client = try buildClient()
         _ = try await client.auth.signUp(email: email, password: password)
         #else
-        cachedStatus = AuthStatus(isAuthenticated: true, user: UserAccount(id: UUID().uuidString, email: email))
+        cachedStatus = AuthStatus(isAuthenticated: true, user: UserAccount(id: UUID().uuidString, email: email, firstName: nil, lastName: nil))
         #endif
+    }
+
+    func updateProfile(firstName: String, lastName: String) async throws {
+        #if canImport(Supabase)
+        let client = try buildClient()
+        #if canImport(GoTrue)
+        let attributes = UserAttributes(data: ["first_name": firstName, "last_name": lastName])
+        _ = try await client.auth.update(user: attributes)
+        #endif
+        #endif
+        // Update cached status optimistically
+        if cachedStatus.isAuthenticated {
+            let current = cachedStatus.user
+            cachedStatus = AuthStatus(
+                isAuthenticated: true,
+                user: UserAccount(
+                    id: current?.id ?? UUID().uuidString,
+                    email: current?.email,
+                    firstName: firstName,
+                    lastName: lastName
+                )
+            )
+        }
     }
 
     func signInWithGoogle() async throws {
@@ -107,7 +149,11 @@ final class SupabaseAuthService: AuthService {
             // supabase-swift handles OAuth callback via this API
             _ = try await client.auth.session(from: url)
             if let user = client.auth.currentUser {
-                cachedStatus = AuthStatus(isAuthenticated: true, user: UserAccount(id: user.id.uuidString, email: user.email))
+                #if canImport(GoTrue) || canImport(Auth)
+                cachedStatus = AuthStatus(isAuthenticated: true, user: buildUserAccount(from: user))
+                #else
+                cachedStatus = AuthStatus(isAuthenticated: true, user: UserAccount(id: user.id.uuidString, email: user.email, firstName: nil, lastName: nil))
+                #endif
             }
         } catch {
             // Ignore; keep prior status
@@ -123,6 +169,44 @@ final class SupabaseAuthService: AuthService {
             throw NSError(domain: "SupabaseAuthService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing Supabase config"])
         }
         return SupabaseClient(supabaseURL: URL(string: projectURL)!, supabaseKey: anonKey)
+    }
+    #endif
+
+    #if canImport(GoTrue) || canImport(Auth)
+    private func buildUserAccount(from user: SupaUser) -> UserAccount {
+        var first: String? = nil
+        var last: String? = nil
+
+        // Try common metadata keys from OAuth providers
+        if let meta = user.userMetadata as? [String: Any] {
+            if let fn = stringFromMeta(meta["given_name"]) ?? stringFromMeta(meta["first_name"]) { first = fn }
+            if let ln = stringFromMeta(meta["family_name"]) ?? stringFromMeta(meta["last_name"]) { last = ln }
+            if (first == nil || last == nil) {
+                if let full = stringFromMeta(meta["name"]) ?? stringFromMeta(meta["full_name"]) {
+                    let parts = full.split(separator: " ")
+                    if parts.count >= 2 {
+                        first = first ?? String(parts.first!)
+                        last = last ?? String(parts.last!)
+                    } else if parts.count == 1 {
+                        first = first ?? String(parts[0])
+                    }
+                }
+            }
+        }
+
+        return UserAccount(
+            id: user.id.uuidString,
+            email: user.email,
+            firstName: first,
+            lastName: last
+        )
+    }
+
+    private func stringFromMeta(_ value: Any?) -> String? {
+        guard let value else { return nil }
+        if let s = value as? String { return s.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let s = String(describing: value).trimmingCharacters(in: .whitespacesAndNewlines)
+        return s.isEmpty || s == "null" ? nil : s
     }
     #endif
 }

@@ -9,100 +9,126 @@ struct OnboardingView: View {
     @EnvironmentObject var appState: AppState
     @State private var email: String = ""
     @State private var password: String = ""
+    @State private var firstName: String = ""
+    @State private var lastName: String = ""
     @State private var isRegistering: Bool = false
     @State private var isBusy: Bool = false
     @State private var errorMessage: String?
     
     var body: some View {
-        ZStack {
-            VStack(spacing: 20) {
-                // Header card
-                LiquidGlassCard(intensity: 0.85, cornerRadius: 28, shadowIntensity: 0.35, enableFloating: true) {
-                    VStack(spacing: 8) {
-                        Text("Welcome to Guido")
-                            .font(.system(size: 24, weight: .bold, design: .rounded))
-                            .foregroundColor(.primary)
-                        Text("Sign in to continue")
-                            .font(.system(size: 14, weight: .medium, design: .rounded))
-                            .foregroundColor(.secondary)
+        GeometryReader { geometry in
+            ZStack {
+                VStack(spacing: 20) {
+                    // Header card
+                    LiquidGlassCard(intensity: 0.85, cornerRadius: 28, shadowIntensity: 0.35, enableFloating: true) {
+                        VStack(spacing: 8) {
+                            Text("Guido")
+                                .font(.system(size: 24, weight: .bold, design: .rounded))
+                                .foregroundColor(Color(.secondaryLabel))
+                            Text("Always by your side")
+                                .font(.system(size: 14, weight: .medium, design: .rounded))
+                                .foregroundColor(Color(.tertiaryLabel))
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 18)
                     }
+                    .frame(maxWidth: 520)
                     .padding(.horizontal, 24)
-                    .padding(.vertical, 18)
-                }
-                .padding(.horizontal, 24)
-                
-                // Google sign-in
-                LiquidGlassCard(intensity: 0.7, cornerRadius: 20, shadowIntensity: 0.25) {
-                    Button(action: { Task { await signInWithGoogle() } }) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "g.circle.fill")
-                                .font(.system(size: 22, weight: .semibold))
-                                .foregroundColor(.primary)
-                            Text("Continue with Google")
-                                .font(.system(size: 16, weight: .semibold, design: .rounded))
-                                .foregroundColor(.primary)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 14)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                }
-                .padding(.horizontal, 24)
-                
-                // Email/password card
-                LiquidGlassCard(intensity: 0.7, cornerRadius: 20, shadowIntensity: 0.25) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            SegmentedToggle(isRegistering: $isRegistering)
-                        }
-                        .padding(.bottom, 4)
-                        
-                        TextField("Email", text: $email)
-                            .textContentType(.emailAddress)
-                            .keyboardType(.emailAddress)
-                            .autocapitalization(.none)
-                            .disableAutocorrection(true)
-                            .padding(12)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
-                        
-                        SecureField("Password", text: $password)
-                            .textContentType(.password)
-                            .padding(12)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
-                        
-                        if let errorMessage {
-                            Text(errorMessage)
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundColor(.red)
-                        }
-                        
-                        Button(action: { Task { await submitEmailPassword() } }) {
-                            HStack {
-                                if isBusy {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle())
-                                }
-                                Text(isRegistering ? "Create account" : "Sign in")
+                    
+                    // Google sign-in
+                    LiquidGlassCard(intensity: 0.7, cornerRadius: 20, shadowIntensity: 0.25) {
+                        Button(action: { Task { await signInWithGoogle() } }) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "g.circle.fill")
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .foregroundColor(Color(.secondaryLabel))
+                                Text("Continue with Google")
                                     .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                    .foregroundColor(Color(.secondaryLabel))
                                 Spacer()
-                                Image(systemName: "arrow.right")
                             }
-                            .foregroundColor(.primary)
                             .padding(.horizontal, 18)
-                            .padding(.vertical, 12)
+                            .padding(.vertical, 14)
                         }
-                        .disabled(isBusy || email.isEmpty || password.count < 6)
                         .buttonStyle(PlainButtonStyle())
                     }
-                    .padding(16)
+                    .frame(maxWidth: 520)
+                    .padding(.horizontal, 24)
+                    
+                    // Email/password card
+                    LiquidGlassCard(intensity: 0.7, cornerRadius: 20, shadowIntensity: 0.25) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                SegmentedToggle(isRegistering: $isRegistering)
+                            }
+                            .padding(.bottom, 4)
+                            
+                            if isRegistering {
+                                HStack(spacing: 8) {
+                                    TextField("First name", text: $firstName)
+                                        .textContentType(.givenName)
+                                        .padding(12)
+                                        .foregroundColor(Color(.secondaryLabel))
+                                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
+                                    TextField("Last name", text: $lastName)
+                                        .textContentType(.familyName)
+                                        .padding(12)
+                                        .foregroundColor(Color(.secondaryLabel))
+                                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
+                                }
+                            }
+                            
+                            TextField("Email", text: $email)
+                                .textContentType(.emailAddress)
+                                .keyboardType(.emailAddress)
+                                .autocapitalization(.none)
+                                .disableAutocorrection(true)
+                                .padding(12)
+                                .foregroundColor(Color(.secondaryLabel))
+                                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
+                            
+                            SecureField("Password", text: $password)
+                                .textContentType(.password)
+                                .padding(12)
+                                .foregroundColor(Color(.secondaryLabel))
+                                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
+                            
+                            if let errorMessage {
+                                Text(errorMessage)
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .foregroundColor(.red)
+                            }
+                            
+                            Button(action: { Task { await submitEmailPassword() } }) {
+                                HStack {
+                                    if isBusy {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: Color(.tertiaryLabel)))
+                                    }
+                                    Text(isRegistering ? "Create account" : "Sign in")
+                                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                    Spacer()
+                                    Image(systemName: "arrow.right")
+                                }
+                                .foregroundColor(Color(.secondaryLabel))
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 12)
+                            }
+                            .disabled(isBusy || email.isEmpty || password.count < 6 || (isRegistering && (firstName.isEmpty || lastName.isEmpty)))
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                        .padding(16)
+                    }
+                    .frame(maxWidth: 520)
+                    .padding(.horizontal, 24)
                 }
-                .padding(.horizontal, 24)
-                
-                Spacer()
+                .frame(maxWidth: .infinity)
+                .frame(height: geometry.size.height)
+                .padding(.horizontal, 0)
+                .overlay(
+                    VStack { Spacer() }.opacity(0)
+                )
             }
-            .padding(.top, 60)
-            .padding(.bottom, 40)
         }
     }
     
@@ -122,6 +148,9 @@ struct OnboardingView: View {
         let result: Result<Void, Error>
         if isRegistering {
             result = await appState.signUp(email: email, password: password)
+            if case .success = result {
+                _ = await appState.updateProfile(firstName: firstName, lastName: lastName)
+            }
         } else {
             result = await appState.signIn(email: email, password: password)
         }

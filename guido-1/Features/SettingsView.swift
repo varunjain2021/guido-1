@@ -15,7 +15,7 @@ struct SettingsView: View {
                     HStack {
                         Text("Settings")
                             .font(.system(size: 22, weight: .bold, design: .rounded))
-                            .foregroundColor(.primary)
+                            .foregroundColor(Color(.secondaryLabel))
                         Spacer()
                     }
                     .padding(20)
@@ -27,13 +27,16 @@ struct SettingsView: View {
                         HStack {
                             Image(systemName: "person.crop.circle")
                                 .font(.system(size: 20, weight: .medium))
-                                .foregroundColor(.secondary)
-                            VStack(alignment: .leading) {
+                                .foregroundColor(Color(.tertiaryLabel))
+                            VStack(alignment: .leading, spacing: 2) {
+                                if let first = appState.authStatus.user?.firstName, let last = appState.authStatus.user?.lastName, !(first.isEmpty && last.isEmpty) {
+                                    Text("\(first) \(last)")
+                                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                                        .foregroundColor(Color(.secondaryLabel))
+                                }
                                 Text(appState.authStatus.user?.email ?? "Signed in")
-                                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                                Text(appState.authStatus.user?.id ?? "")
-                                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                                    .foregroundColor(.secondary)
+                                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                                    .foregroundColor(Color(.tertiaryLabel))
                             }
                             Spacer()
                         }
@@ -42,11 +45,13 @@ struct SettingsView: View {
                             HStack {
                                 Text("Log out")
                                     .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                    .foregroundColor(Color(.secondaryLabel))
                                 Spacer()
                                 Image(systemName: "arrow.right.circle")
                             }
-                            .foregroundColor(.primary)
+                            .foregroundColor(Color(.secondaryLabel))
                             .padding(.vertical, 8)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(PlainButtonStyle())
                     }
