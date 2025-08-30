@@ -25,6 +25,7 @@ class AppState: ObservableObject {
     lazy var elevenLabsService = ElevenLabsService(apiKey: elevenLabsAPIKey)
     lazy var locationManager = LocationManager()
     let authService: AuthService = SupabaseAuthService()
+    private var profileService: SupabaseProfileService?
 
     init() {
         // Load API keys from Config.plist
@@ -53,6 +54,9 @@ class AppState: ObservableObject {
 
         // Configure auth service
         authService.configure(url: supabaseURL, anonKey: supabaseAnonKey)
+        if let supaAuth = authService as? SupabaseAuthService {
+            self.profileService = SupabaseProfileService(auth: supaAuth)
+        }
 
         // Read current auth status
         Task { [weak self] in
@@ -77,6 +81,9 @@ class AppState: ObservableObject {
         do {
             try await authService.signUp(email: email, password: password)
             self.authStatus = await authService.currentStatus()
+            if let profileService, let user = authStatus.user {
+                await profileService.upsertCurrentUserProfile(firstName: user.firstName, lastName: user.lastName, email: user.email)
+            }
             return .success(())
         } catch {
             return .failure(error)
@@ -98,6 +105,9 @@ class AppState: ObservableObject {
             try await authService.signInWithGoogle()
             // Status will update on callback as well
             self.authStatus = await authService.currentStatus()
+            if let profileService, let user = authStatus.user {
+                await profileService.upsertCurrentUserProfile(firstName: user.firstName, lastName: user.lastName, email: user.email)
+            }
             return .success(())
         } catch {
             return .failure(error)
