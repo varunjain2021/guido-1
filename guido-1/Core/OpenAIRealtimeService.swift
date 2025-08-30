@@ -732,7 +732,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         print("🔐 [CONNECT] Retrieved ephemeral key")
         
         // Create WebSocket connection
-        guard let url = URL(string: "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17") else {
+        guard let url = URL(string: "wss://api.openai.com/v1/realtime?model=gpt-realtime") else {
             throw NSError(domain: "OpenAIRealtimeService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid WebSocket URL"])
         }
         
@@ -820,7 +820,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         let requestBody = [
-            "model": "gpt-4o-realtime-preview-2025-06-03",
+            "model": "gpt-realtime",
             "voice": "coral"
         ]
         
