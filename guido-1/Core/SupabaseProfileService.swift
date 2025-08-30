@@ -4,9 +4,20 @@
 //
 
 import Foundation
+@_exported import struct Foundation.UUID
+#if canImport(Supabase)
+import Supabase
+#endif
 
 struct Profile: Codable {
     let id: String
+    let email: String?
+    let first_name: String?
+    let last_name: String?
+}
+
+private struct ProfileUpsert: Encodable {
+    let id: UUID
     let email: String?
     let first_name: String?
     let last_name: String?
@@ -22,28 +33,22 @@ final class SupabaseProfileService {
     func upsertCurrentUserProfile(firstName: String?, lastName: String?, email: String?) async {
         #if canImport(Supabase)
         do {
-            guard let client = try? self.auth.performClientBuild() else { return }
+            guard let client = try? (self.auth as? SupabaseAuthService)?.buildClient() else { return }
             guard let user = client.auth.currentUser else { return }
-            let payload: [String: Any?] = [
-                "id": user.id.uuidString,
-                "email": email ?? user.email,
-                "first_name": firstName,
-                "last_name": lastName
-            ]
-            // Using RPC via proxy_execute would be ideal; here we rely on supabase-swift Postgrest
-            _ = try await client.database.from("profiles").upsert(values: payload).execute()
+            let payload = ProfileUpsert(
+                id: user.id,
+                email: email ?? user.email,
+                first_name: firstName,
+                last_name: lastName
+            )
+            _ = try await client.database
+                .from("profiles")
+                .upsert(payload, onConflict: "id")
+                .execute()
         } catch {
             // Non-fatal
         }
         #endif
     }
 }
-
-extension SupabaseAuthService {
-    // Expose client builder for sibling service (guarded build-only)
-    #if canImport(Supabase)
-    func performClientBuild() throws -> SupabaseClient { try buildClient() }
-    #endif
-}
-
 

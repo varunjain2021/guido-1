@@ -164,7 +164,7 @@ final class SupabaseAuthService: AuthService {
     // MARK: - Private
 
     #if canImport(Supabase)
-    private func buildClient() throws -> SupabaseClient {
+    internal func buildClient() throws -> SupabaseClient {
         if projectURL.isEmpty || anonKey.isEmpty {
             throw NSError(domain: "SupabaseAuthService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing Supabase config"])
         }
