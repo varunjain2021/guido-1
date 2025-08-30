@@ -10,5 +10,9 @@
     <string>your-google-api-key-here</string>
     <key>OpenWeather_API_Key</key>
     <string>your-openweather-api-key-here</string>
+    <key>Supabase_URL</key>
+    <string>https://your-project.supabase.co</string>
+    <key>Supabase_Anon_Key</key>
+    <string>your-supabase-anon-key-here</string>
 </dict>
 </plist>

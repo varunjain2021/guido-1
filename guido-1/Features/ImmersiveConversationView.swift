@@ -9,6 +9,7 @@ import SwiftUI
 import CoreLocation
 
 struct ImmersiveConversationView: View {
+    @EnvironmentObject var appState: AppState
     @StateObject private var realtimeService: OpenAIRealtimeService
     @StateObject private var locationManager = LocationManager()
     
@@ -24,6 +25,7 @@ struct ImmersiveConversationView: View {
     @State private var userSpeaking = false
     @State private var guidoSpeaking = false
     @State private var audioLevel: Float = 0.0
+    @State private var showSettings = false
     
     // Testing mode
     @State private var testingMode = false
@@ -60,8 +62,8 @@ struct ImmersiveConversationView: View {
                 }
             }
             
-            // Connection controls in center when not connected
-            if !realtimeService.isConnected {
+            // Connection controls in center when not connected (only after auth)
+            if appState.authStatus.isAuthenticated && !realtimeService.isConnected {
                 centeredLiquidGlassButton
             }
             
@@ -79,11 +81,48 @@ struct ImmersiveConversationView: View {
             )
             
             // Minimal disconnect controls when connected
-            if realtimeService.isConnected {
+            if appState.authStatus.isAuthenticated && realtimeService.isConnected {
                 VStack {
                     Spacer()
                     disconnectControls
                 }
+            }
+
+            // Settings bubble (top-right) when authenticated
+            if appState.authStatus.isAuthenticated {
+                VStack {
+                    HStack {
+                        Spacer()
+                        LiquidGlassCard(intensity: 0.5, cornerRadius: 12, shadowIntensity: 0.15) {
+                            Button(action: { withAnimation(.easeInOut(duration: 0.25)) { showSettings.toggle() } }) {
+                                Image(systemName: "gearshape")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 36, height: 36)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                    .padding(.top, 16)
+                    .padding(.trailing, 16)
+                    Spacer()
+                }
+            }
+
+            // Inline settings panel
+            if appState.authStatus.isAuthenticated && showSettings {
+                VStack {
+                    SettingsView()
+                        .environmentObject(appState)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
+
+            // Inline onboarding components on the same canvas
+            if appState.authStatus.isAuthenticated == false {
+                OnboardingView()
+                    .environmentObject(appState)
+                    .transition(.opacity)
             }
         }
         .navigationBarHidden(true)

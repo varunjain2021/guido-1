@@ -10,6 +10,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @State private var selectedExperience: ExperienceType = .immersive
+    @State private var showSettings: Bool = false
     
     enum ExperienceType: String, CaseIterable {
         case immersive = "🌟 Immersive"
@@ -51,6 +52,7 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .animation(.easeInOut(duration: 0.3), value: selectedExperience)
+            // Auth UI is now integrated into ImmersiveConversationView for a continuous canvas
         }
         .navigationViewStyle(StackNavigationViewStyle())
         .onAppear {
