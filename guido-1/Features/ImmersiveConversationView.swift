@@ -9,8 +9,9 @@ import SwiftUI
 import CoreLocation
 
 struct ImmersiveConversationView: View {
-    @StateObject private var realtimeService: OpenAIRealtimeService
-    @StateObject private var locationManager = LocationManager()
+    @ObservedObject var realtimeService: OpenAIRealtimeService
+    @EnvironmentObject var appState: AppState
+    @EnvironmentObject var authService: SupabaseAuthService
     
     // UI State
     @State private var showResults = false
@@ -19,6 +20,7 @@ struct ImmersiveConversationView: View {
     @State private var resultsTitle = ""
     @State private var isConnecting = false
     @State private var connectionError: String?
+    @State private var didSetupAfterConnect = false
     
     // Canvas State
     @State private var userSpeaking = false
@@ -29,11 +31,8 @@ struct ImmersiveConversationView: View {
     @State private var testingMode = false
     @State private var currentTestEnvironment: CanvasEnvironment = .unknown
     
-    private let openAIAPIKey: String
-    
-    init(openAIAPIKey: String) {
-        self.openAIAPIKey = openAIAPIKey
-        self._realtimeService = StateObject(wrappedValue: OpenAIRealtimeService(apiKey: openAIAPIKey))
+    init(realtimeService: OpenAIRealtimeService) {
+        self.realtimeService = realtimeService
         print("🌟 Immersive Conversation View initializing...")
     }
     
@@ -49,6 +48,8 @@ struct ImmersiveConversationView: View {
             )
             .ignoresSafeArea()
             
+            // (moved) settings button overlayed later for consistent safe-area placement
+
             // Testing mode overlay (subtle, top-right)
             if testingMode {
                 VStack {
@@ -58,11 +59,32 @@ struct ImmersiveConversationView: View {
                     }
                     Spacer()
                 }
+                .padding(.top, 16)
+                .padding(.trailing, 16)
             }
             
-            // Connection controls in center when not connected
+            // When not connected, show a single elegant liquid-glass Connect button centered
             if !realtimeService.isConnected {
-                centeredLiquidGlassButton
+                VStack {
+                    LiquidGlassCard(intensity: 0.4, cornerRadius: 16, shadowIntensity: 0.12) {
+                        Button(action: { startConversation() }) {
+                            HStack(spacing: 6) {
+                                if isConnecting {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: Color(.secondaryLabel)))
+                                        .scaleEffect(0.6)
+                                }
+                                Text(isConnecting ? "connecting…" : "begin")
+                                    .font(.system(size: 14, weight: .light, design: .rounded))
+                                    .foregroundColor(Color(.secondaryLabel))
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .disabled(isConnecting)
+                    }
+                }
             }
             
             // Floating results panel with inline expansion
@@ -71,19 +93,51 @@ struct ImmersiveConversationView: View {
                 title: resultsTitle,
                 isVisible: showResults,
                 onExpand: {
-                    // onExpand is now handled internally by the FloatingResultsPanel
+                    // onExpand handled internally
                 },
                 onDismiss: {
                     hideResults()
                 }
             )
             
-            // Minimal disconnect controls when connected
+            // Small bottom-center End button when connected
             if realtimeService.isConnected {
                 VStack {
                     Spacer()
-                    disconnectControls
+                    LiquidGlassCard(intensity: 0.5, cornerRadius: 14, shadowIntensity: 0.15) {
+                        Button(action: { stopConversation() }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(Color(.secondaryLabel))
+                                Text("end")
+                                    .font(.system(size: 13, weight: .light, design: .rounded))
+                                    .foregroundColor(Color(.secondaryLabel))
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                    .padding(.bottom, 18)
                 }
+            }
+
+            // Settings overlay
+            if showingSettingsOverlay {
+                settingsOverlay
+                    .transition(.opacity.combined(with: .scale))
+            }
+        }
+        .overlay {
+            VStack {
+                HStack {
+                    Spacer()
+                    settingsButton
+                }
+                .padding(.horizontal)
+                .padding(.top, 80)
+                Spacer()
             }
         }
         .navigationBarHidden(true)
@@ -91,13 +145,16 @@ struct ImmersiveConversationView: View {
             if isConnected {
                 isConnecting = false
                 connectionError = nil
-                setupLocationTracking()
+                if !didSetupAfterConnect {
+                    didSetupAfterConnect = true
+                    setupLocationTracking()
+                }
+            } else {
+                didSetupAfterConnect = false
             }
         }
         .onReceive(realtimeService.$conversationState) { state in
             updateSpeechStates(for: state)
-            
-            // Hide results when returning to idle
             if state == .idle && showResults {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                     if realtimeService.conversationState == .idle {
@@ -168,6 +225,21 @@ struct ImmersiveConversationView: View {
         }
     }
     
+    // MARK: - Settings Button (safe-area aware)
+    private var settingsButton: some View {
+        LiquidGlassCard(intensity: 0.45, cornerRadius: 10, shadowIntensity: 0.12) {
+            Button(action: { withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { showingSettingsOverlay = true } }) {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(Color(.secondaryLabel))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+            }
+            .buttonStyle(PlainButtonStyle())
+            .accessibilityLabel("Settings")
+        }
+    }
+
     // MARK: - Disconnect Controls
     
     private var disconnectControls: some View {
@@ -193,7 +265,7 @@ struct ImmersiveConversationView: View {
     // MARK: - Setup and Actions
     
     private func setupView() {
-        locationManager.requestLocationPermission()
+        appState.locationManager.requestLocationPermission()
         
         // Configure audio feedback
         realtimeService.audioFeedbackManager.setEnabled(true)
@@ -202,7 +274,7 @@ struct ImmersiveConversationView: View {
     }
     
     private func setupLocationTracking() {
-        realtimeService.setLocationManager(locationManager)
+        realtimeService.setLocationManager(appState.locationManager)
     }
     
     private func startConversation() {
@@ -520,6 +592,171 @@ struct ImmersiveConversationView: View {
         }
     }
     
+    // MARK: - Settings Overlay
+    @State private var showingSettingsOverlay = false
+    @State private var settingsRoute: SettingsRoute? = nil
+    
+    private enum SettingsRoute {
+        case menu
+        case profile
+        case history
+    }
+    
+    private var settingsOverlay: some View {
+        ZStack {
+            // Dim background with tap to dismiss
+            Color.black.opacity(0.25)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        showingSettingsOverlay = false
+                        settingsRoute = nil
+                    }
+                }
+            
+            VStack(spacing: 10) {
+                HStack {
+                    if settingsRoute != nil {
+                        LiquidGlassCard(intensity: 0.45, cornerRadius: 10, shadowIntensity: 0.1) {
+                            Button(action: {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                                    settingsRoute = nil
+                                }
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "chevron.left")
+                                        .font(.system(size: 12, weight: .semibold))
+                                    Text("Back")
+                                        .font(.system(size: 12, weight: .light, design: .rounded))
+                                }
+                                .foregroundColor(Color(.secondaryLabel))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    } else {
+                        Spacer()
+                    }
+                    Spacer()
+                    LiquidGlassCard(intensity: 0.45, cornerRadius: 10, shadowIntensity: 0.1) {
+                        Button(action: { withAnimation(.easeInOut(duration: 0.25)) { showingSettingsOverlay = false; settingsRoute = nil } }) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(Color(.secondaryLabel))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+                .padding(.horizontal, 14)
+                
+                Spacer(minLength: 0)
+                
+                if settingsRoute == nil {
+                    // Main menu
+                    VStack(spacing: 12) {
+                        LiquidGlassCard(intensity: 0.5, cornerRadius: 16, shadowIntensity: 0.15) {
+                            Button(action: { settingsRoute = .profile }) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "person.circle")
+                                        .font(.system(size: 16, weight: .medium))
+                                    Text("View Profile")
+                                        .font(.system(size: 14, weight: .light, design: .rounded))
+                                }
+                                .foregroundColor(Color(.secondaryLabel))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                        
+                        LiquidGlassCard(intensity: 0.5, cornerRadius: 16, shadowIntensity: 0.15) {
+                            Button(action: { settingsRoute = .history }) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "clock.arrow.circlepath")
+                                        .font(.system(size: 16, weight: .medium))
+                                    Text("My History")
+                                        .font(.system(size: 14, weight: .light, design: .rounded))
+                                }
+                                .foregroundColor(Color(.secondaryLabel))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                        
+                        LiquidGlassCard(intensity: 0.5, cornerRadius: 16, shadowIntensity: 0.15) {
+                            Button(action: { Task { await signOut() } }) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                                        .font(.system(size: 16, weight: .medium))
+                                    Text("Sign Out")
+                                        .font(.system(size: 14, weight: .light, design: .rounded))
+                                }
+                                .foregroundColor(Color(.secondaryLabel))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 24)
+                } else if settingsRoute == .profile {
+                    // Profile placeholder
+                    LiquidGlassCard(intensity: 0.5, cornerRadius: 16, shadowIntensity: 0.15) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Profile")
+                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(.secondaryLabel))
+                            Text("Coming soon…")
+                                .font(.system(size: 13, weight: .light, design: .rounded))
+                                .foregroundColor(Color(.tertiaryLabel))
+                        }
+                        .padding(16)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 24)
+                } else if settingsRoute == .history {
+                    // History placeholder
+                    LiquidGlassCard(intensity: 0.5, cornerRadius: 16, shadowIntensity: 0.15) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("My History")
+                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(.secondaryLabel))
+                            Text("No history yet.")
+                                .font(.system(size: 13, weight: .light, design: .rounded))
+                                .foregroundColor(Color(.tertiaryLabel))
+                        }
+                        .padding(16)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 24)
+                }
+            }
+        }
+    }
+    
+    private func signOut() async {
+        // Stop location updates (non-async)
+        appState.locationManager.stopLocationUpdates()
+        
+        // Dismiss overlay
+        await MainActor.run {
+            showingSettingsOverlay = false
+            settingsRoute = nil
+        }
+        
+        // Sign out via auth service
+        do {
+            try await authService.signOut()
+        } catch {
+            print("❌ [Auth] Sign out failed: \(error)")
+        }
+    }
+    
     // MARK: - Conversation State Mapping
     
     private func mapConversationState(_ state: OpenAIRealtimeService.ConversationState) -> ConversationState {
@@ -577,6 +814,6 @@ struct ImmersiveConversationView: View {
 
 struct ImmersiveConversationView_Previews: PreviewProvider {
     static var previews: some View {
-        ImmersiveConversationView(openAIAPIKey: "test-key")
+        ImmersiveConversationView(realtimeService: OpenAIRealtimeService(apiKey: "test-key"))
     }
 }

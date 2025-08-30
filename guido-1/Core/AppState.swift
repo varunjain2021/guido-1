@@ -21,6 +21,7 @@ class AppState: ObservableObject {
     lazy var openAIChatService = OpenAIChatService(apiKey: openAIAPIKey)
     lazy var elevenLabsService = ElevenLabsService(apiKey: elevenLabsAPIKey)
     lazy var locationManager = LocationManager()
+    lazy var realtimeService = OpenAIRealtimeService(apiKey: openAIAPIKey)
 
     init() {
         // Load API keys from Config.plist

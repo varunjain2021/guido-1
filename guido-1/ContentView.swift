@@ -41,7 +41,7 @@ struct ContentView: View {
                 Group {
                     switch selectedExperience {
                     case .immersive:
-                        ImmersiveConversationView(openAIAPIKey: appState.openAIAPIKey)
+                        ImmersiveConversationView(realtimeService: appState.realtimeService)
                     case .croatian:
                         CroatianBeachConversationView(openAIAPIKey: appState.openAIAPIKey)
                     case .realtime:

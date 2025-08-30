@@ -5,6 +5,14 @@
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
+			<key>CFBundleURLName</key>
+			<string>GoogleSignIn</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.306994331391-6g25ut4tce04292teofjq06hph965fej</string>
+			</array>
+		</dict>
+		<dict>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
@@ -12,6 +20,16 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>guido</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>supabase.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.guido-auth.guido-1</string>
 			</array>
 		</dict>
 	</array>
