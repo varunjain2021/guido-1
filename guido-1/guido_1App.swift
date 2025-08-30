@@ -17,6 +17,7 @@ struct guido_1App: App {
                 .environmentObject(appState)
                 .onOpenURL { url in
                     handleDeepLink(url)
+                    Task { await appState.authService.handleOpenURL(url) }
                 }
                 .onAppear {
                     print("🚀 Guido app launched successfully!")

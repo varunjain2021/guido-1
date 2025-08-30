@@ -38,6 +38,8 @@ post_install do |installer|
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
       config.build_settings['CODE_SIGN_IDENTITY'] = ''
+      # Fix Xcode 15+ user script sandboxing breaking CocoaPods resource scripts
+      config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
     end
   end
 end 

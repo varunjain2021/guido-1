@@ -9,6 +9,13 @@
 /* Begin PBXBuildFile section */
 		A55C0A1ECD91D1DC28C4D1A9 /* Pods_guido_1Tests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2F02A2AABBBF0F950A622CD5 /* Pods_guido_1Tests.framework */; };
 		AADA7721B01B4C3C182EA27C /* Pods_guido_1_guido_1UITests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 275F5B9FE2D897C8397303CA /* Pods_guido_1_guido_1UITests.framework */; };
+		D4BDD3252E6397D40011C418 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = D4BDD3242E6397D40011C418 /* Auth */; };
+		D4BDD3272E6397D40011C418 /* Functions in Frameworks */ = {isa = PBXBuildFile; productRef = D4BDD3262E6397D40011C418 /* Functions */; };
+		D4BDD3292E6397D40011C418 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = D4BDD3282E6397D40011C418 /* PostgREST */; };
+		D4BDD32B2E6397D40011C418 /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = D4BDD32A2E6397D40011C418 /* Realtime */; };
+		D4BDD32D2E6397D40011C418 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = D4BDD32C2E6397D40011C418 /* Storage */; };
+		D4BDD32F2E639A060011C418 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = D4BDD32E2E639A060011C418 /* Supabase */; };
+		D4BDD3312E639A470011C418 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = D4BDD3302E639A470011C418 /* Auth */; };
 		E49A9E3D4C746030800DECC7 /* Pods_guido_1.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 309DA5C32707E91FA7380BCA /* Pods_guido_1.framework */; };
 /* End PBXBuildFile section */
 
@@ -108,6 +115,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				E49A9E3D4C746030800DECC7 /* Pods_guido_1.framework in Frameworks */,
+				D4BDD3312E639A470011C418 /* Auth in Frameworks */,
+				D4BDD32D2E6397D40011C418 /* Storage in Frameworks */,
+				D4BDD3272E6397D40011C418 /* Functions in Frameworks */,
+				D4BDD32F2E639A060011C418 /* Supabase in Frameworks */,
+				D4BDD32B2E6397D40011C418 /* Realtime in Frameworks */,
+				D4BDD3252E6397D40011C418 /* Auth in Frameworks */,
+				D4BDD3292E6397D40011C418 /* PostgREST in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -276,6 +290,9 @@
 			);
 			mainGroup = D47B0FE12E35DB7B0076F1FF;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				D4BDD3232E6397D40011C418 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D47B0FEB2E35DB7B0076F1FF /* Products */;
 			projectDirPath = "";
@@ -548,6 +565,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = ZKLADPT47Z;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/guido-1/Frameworks",
@@ -584,6 +602,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = ZKLADPT47Z;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/guido-1/Frameworks",
@@ -617,6 +636,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MARKETING_VERSION = 1.0;
@@ -636,6 +656,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MARKETING_VERSION = 1.0;
@@ -654,6 +675,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.vjventures.guido-1UITests";
@@ -671,6 +693,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.vjventures.guido-1UITests";
@@ -722,6 +745,55 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D4BDD3232E6397D40011C418 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase-community/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D4BDD3242E6397D40011C418 /* Auth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4BDD3232E6397D40011C418 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Auth;
+		};
+		D4BDD3262E6397D40011C418 /* Functions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4BDD3232E6397D40011C418 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Functions;
+		};
+		D4BDD3282E6397D40011C418 /* PostgREST */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4BDD3232E6397D40011C418 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = PostgREST;
+		};
+		D4BDD32A2E6397D40011C418 /* Realtime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4BDD3232E6397D40011C418 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Realtime;
+		};
+		D4BDD32C2E6397D40011C418 /* Storage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4BDD3232E6397D40011C418 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Storage;
+		};
+		D4BDD32E2E639A060011C418 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4BDD3232E6397D40011C418 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+		D4BDD3302E639A470011C418 /* Auth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4BDD3232E6397D40011C418 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Auth;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = D47B0FE22E35DB7B0076F1FF /* Project object */;
 }

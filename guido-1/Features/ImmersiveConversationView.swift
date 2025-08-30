@@ -9,6 +9,7 @@ import SwiftUI
 import CoreLocation
 
 struct ImmersiveConversationView: View {
+    @EnvironmentObject var appState: AppState
     @StateObject private var realtimeService: OpenAIRealtimeService
     @StateObject private var locationManager = LocationManager()
     
@@ -24,6 +25,7 @@ struct ImmersiveConversationView: View {
     @State private var userSpeaking = false
     @State private var guidoSpeaking = false
     @State private var audioLevel: Float = 0.0
+    @State private var showSettings = false
     
     // Testing mode
     @State private var testingMode = false
@@ -60,8 +62,8 @@ struct ImmersiveConversationView: View {
                 }
             }
             
-            // Connection controls in center when not connected
-            if !realtimeService.isConnected {
+            // Connection controls in center when not connected (only after auth)
+            if appState.authStatus.isAuthenticated && !realtimeService.isConnected && !showSettings {
                 centeredLiquidGlassButton
             }
             
@@ -79,11 +81,56 @@ struct ImmersiveConversationView: View {
             )
             
             // Minimal disconnect controls when connected
-            if realtimeService.isConnected {
+            if appState.authStatus.isAuthenticated && realtimeService.isConnected {
                 VStack {
                     Spacer()
                     disconnectControls
                 }
+            }
+
+            // Settings bubble (top-right) when authenticated
+            if appState.authStatus.isAuthenticated {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button(action: { withAnimation(.easeInOut(duration: 0.25)) { showSettings.toggle() } }) {
+                            LiquidGlassCard(intensity: showSettings ? 0.8 : 0.5, cornerRadius: 12, shadowIntensity: showSettings ? 0.3 : 0.15) {
+                                Image(systemName: showSettings ? "gearshape.fill" : "gearshape")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(showSettings ? Color(.secondaryLabel) : .secondary)
+                                    .frame(width: 36, height: 36)
+                            }
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                    .padding(.top, 16)
+                    .padding(.trailing, 16)
+                    Spacer()
+                }
+            }
+
+            // Inline settings panel with tap-blocking backdrop
+            if appState.authStatus.isAuthenticated && showSettings {
+                ZStack {
+                    Color.black.opacity(0.0001)
+                        .ignoresSafeArea()
+                        .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { showSettings = false } }
+                    SettingsView()
+                        .environmentObject(appState)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+                .zIndex(20)
+            }
+
+            // Inline onboarding components on the same canvas
+            if appState.authStatus.isAuthenticated == false {
+                ZStack {
+                    Color.clear.ignoresSafeArea()
+                    OnboardingView()
+                        .environmentObject(appState)
+                        .transition(.opacity)
+                }
+                .zIndex(10)
             }
         }
         .navigationBarHidden(true)
