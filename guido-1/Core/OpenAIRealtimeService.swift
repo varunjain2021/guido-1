@@ -1441,38 +1441,19 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         }
     }
     
-    func clearOutputAudioBuffer() async {
-        guard isConnected else { return }
-        
-        struct ClearOutputBufferEvent: Codable {
-            let type: String
-            let event_id: String
-        }
-        
-        let event = ClearOutputBufferEvent(
-            type: "output_audio_buffer.clear",
-            event_id: UUID().uuidString
-        )
-        
-        do {
-            try await sendEvent(event)
-            print("🧹 Cleared output audio buffer")
-        } catch {
-            print("❌ Failed to clear output audio buffer: \(error)")
-        }
-    }
-    
-    func cancelResponse() async {
+    func cancelResponse(responseId: String? = nil) async {
         guard isConnected else { return }
         
         struct CancelResponseEvent: Codable {
             let type: String
             let event_id: String
+            let response_id: String?
         }
         
         let event = CancelResponseEvent(
             type: "response.cancel",
-            event_id: UUID().uuidString
+            event_id: UUID().uuidString,
+            response_id: responseId
         )
         
         do {
@@ -1507,17 +1488,14 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         // 3. CANCEL ACTIVE AI RESPONSE
         if let responseId = currentResponseId {
             print("🛑 [INTERRUPT] Step 3: Cancelling response ID: \(responseId)")
-            await cancelResponse()
+            await cancelResponse(responseId: responseId)
             currentResponseId = nil
             print("🛑 [INTERRUPT] Step 3: AI response cancelled and ID cleared")
         } else {
             print("🛑 [INTERRUPT] Step 3: No active response to cancel")
         }
         
-        // 4. CLEAR AUDIO BUFFERS
-        await clearOutputAudioBuffer()
-        print("🛑 [INTERRUPT] Step 4: Output buffer cleared")
-        
+        // 4. CLEAR AUDIO BUFFERS (input buffer only; output buffer is client-side only)
         await clearInputAudioBuffer()
         print("🛑 [INTERRUPT] Step 4: Input buffer cleared")
         
