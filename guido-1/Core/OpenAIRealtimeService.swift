@@ -240,11 +240,11 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     
     // MARK: - VAD Configuration
     fileprivate enum VADConfig {
-        static let useSemanticVAD = false  // Use server VAD for reliable turn detection
+        static let useSemanticVAD = true  // Prefer semantic VAD per latest API guidance
         static let semanticEagerness = "medium"  
         // Simple VAD settings - keeping default sensitivity for natural conversation
-        static let serverThreshold: Double = 0.5  // Standard threshold for responsive detection
-        static let serverSilenceDuration = 500   // Standard silence duration for natural flow
+        static let serverThreshold: Double = 0.6  // Slightly higher for fewer false positives
+        static let serverSilenceDuration = 300   // Faster turn close per docs examples
         static let serverPrefixPadding = 300     // Longer padding for better detection
         
         // Minimum speech duration threshold (easily adjustable for testing)
@@ -289,6 +289,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     // Audio playback - Streaming solution using AVAudioPlayerNode
     private var audioPlayerNode: AVAudioPlayerNode?
     private var audioMixerNode: AVAudioMixerNode?
+    // Optional output dynamics to avoid clipping
+    private var audioLimiterNode: AVAudioUnitEQ?
     private var streamingAudioBuffer: Data = Data()
     private var isPlayingQueue = false
     private let audioPlayerLock = NSLock()
@@ -296,6 +298,49 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     private let pcm24Format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24000, channels: 1, interleaved: false)!
     private var engineOutputFormat: AVAudioFormat?
     private var audioConverter: AVAudioConverter?
+    // Input resampler: mic format -> 24kHz Int16 mono for OpenAI
+    private var inputConverter: AVAudioConverter?
+    // Logging toggles
+    private let enableVerboseAudioLogging = false
+    private let enableAudioQualityLogs = true
+    private let enablePlaybackSchedulingLogs = true
+    // Background queue for scheduling/playback to avoid main thread contention
+    private let playbackQueue = DispatchQueue(label: "OpenAIRealtimeService.playback", qos: .userInitiated)
+    // Output gain headroom (dB). Negative values reduce level to prevent clipping
+    private let outputHeadroomDb: Float = -3.0
+    
+    // Audio output quality instrumentation
+    private struct AudioOutputStats {
+        var chunkCount: Int = 0
+        var dropCount: Int = 0
+        var totalBytes: Int = 0
+        var lastAppendAt: TimeInterval = 0
+        var interarrivalMsMax: Double = 0
+        var interarrivalMsSum: Double = 0
+        var queueDepthMax: Int = 0
+        var convertMsSum: Double = 0
+        var peakMax: Double = 0
+        var rmsSum: Double = 0
+        var firstDeltaAt: TimeInterval = 0
+        var firstPlayAt: TimeInterval = 0
+    }
+    private var audioOutStats = AudioOutputStats()
+    private func resetAudioOutStats() {
+        audioOutStats = AudioOutputStats()
+    }
+    private func printAudioQualitySummary(tag: String, isFinal: Bool) {
+        guard enableAudioQualityLogs else { return }
+        let n = max(1, audioOutStats.chunkCount)
+        let meanIat = (audioOutStats.chunkCount > 1) ? (audioOutStats.interarrivalMsSum / Double(audioOutStats.chunkCount - 1)) : 0
+        let meanConvert = audioOutStats.convertMsSum / Double(n)
+        let meanRms = audioOutStats.rmsSum / Double(n)
+        let startLagMs = (audioOutStats.firstPlayAt > 0 && audioOutStats.firstDeltaAt > 0) ? (audioOutStats.firstPlayAt - audioOutStats.firstDeltaAt) * 1000.0 : 0
+        let prefix = isFinal ? "📈 [AUDIO-QUALITY]" : "📈 [AUDIO-QUALITY SNAPSHOT]"
+        print("\(prefix) tag=\(tag) chunks=\(audioOutStats.chunkCount), drops=\(audioOutStats.dropCount), bytes=\(audioOutStats.totalBytes), queueDepthMax=\(audioOutStats.queueDepthMax)")
+        print("\(prefix) tag=\(tag) iat_ms(mean/max)=\(String(format: "%.1f/%.1f", meanIat, audioOutStats.interarrivalMsMax)) convert_ms(mean)=\(String(format: "%.2f", meanConvert)) start_lag_ms=\(String(format: "%.1f", startLagMs))")
+        print("\(prefix) tag=\(tag) peak_max=\(String(format: "%.3f", audioOutStats.peakMax)) rms_mean=\(String(format: "%.3f", meanRms))")
+        if isFinal { resetAudioOutStats() }
+    }
     
 
     
@@ -311,6 +356,9 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     // Timing tracking
     private var speechStartTime: TimeInterval = 0
     private var speechTimeoutTimer: Timer?
+    private var commitFallbackWorkItem: DispatchWorkItem?
+    private var lastServerSpeechStartTime: TimeInterval = 0
+    private var lastServerSpeechStopTime: TimeInterval = 0
     
     init(apiKey: String) {
         self.apiKey = apiKey
@@ -367,6 +415,15 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         inputNode = audioEngine.inputNode
         let inputFormat = inputNode?.outputFormat(forBus: 0)
         print("🎤 [AUDIO] Input format: \(inputFormat?.description ?? "unknown")")
+        // Build input converter to match server-required format (24kHz Int16 mono)
+        if let inFmt = inputFormat {
+            inputConverter = AVAudioConverter(from: inFmt, to: pcm24Format)
+            if let conv = inputConverter {
+                print("🔄 [AUDIO] Mic input converter created: \(conv.inputFormat.sampleRate)Hz/\(conv.inputFormat.channelCount)ch -> \(conv.outputFormat.sampleRate)Hz/\(conv.outputFormat.channelCount)ch")
+            } else {
+                print("⚠️ [AUDIO] Failed to create mic input converter; relying on raw conversion")
+            }
+        }
         
         // Set up streaming audio nodes BEFORE starting the engine
         setupStreamingAudio()
@@ -390,7 +447,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             // Allow user to interrupt when AI is responding but not yet playing audio
             guard !isAIResponding else { return }
             
-            let audioData = self.convertAudioBufferToData(buffer)
+            let audioData = self.convertMicBufferToServerPCMData(buffer)
             if audioData.count > 0 {
                 Task {
                     await self.sendAudioData(audioData)
@@ -440,20 +497,55 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         return sum / Float(frameCount)
     }
     
-    private func convertAudioBufferToData(_ buffer: AVAudioPCMBuffer) -> Data {
-        guard let channelData = buffer.floatChannelData?[0] else {
+    private func convertMicBufferToServerPCMData(_ buffer: AVAudioPCMBuffer) -> Data {
+        // Prefer AVAudioConverter for sample rate/channel/format conversion
+        if let converter = inputConverter {
+            let inFmt = buffer.format
+            let outFmt = converter.outputFormat // 24kHz Int16 mono
+            // Estimate destination frame capacity
+            let ratio = outFmt.sampleRate / inFmt.sampleRate
+            let dstCapacity = max(1, Int(Double(buffer.frameLength) * ratio) + 32)
+            guard let dstBuffer = AVAudioPCMBuffer(pcmFormat: outFmt, frameCapacity: AVAudioFrameCount(dstCapacity)) else {
+                print("❌ [AUDIO] Failed to create dst buffer for input conversion")
             return Data()
         }
-        
+            var error: NSError?
+            let status = converter.convert(to: dstBuffer, error: &error) { _, outStatus in
+                outStatus.pointee = .haveData
+                return buffer
+            }
+            if status == .error || error != nil {
+                print("❌ [AUDIO] Mic convert error: \(error?.localizedDescription ?? "unknown")")
+                return Data()
+            }
+            // Extract Int16 mono samples
+            guard let i16 = dstBuffer.int16ChannelData?[0] else { return Data() }
+            let frames = Int(dstBuffer.frameLength)
+            let byteCount = frames * MemoryLayout<Int16>.size
+            let data = Data(bytes: i16, count: byteCount)
+            if enableVerboseAudioLogging {
+                print("🎚️ [AUDIO] Mic chunk converted: src=\(buffer.frameLength) -> dst=\(dstBuffer.frameLength) @ \(outFmt.sampleRate)Hz")
+            }
+            return data
+        }
+        // Fallback: only if input is already mono Float32 at 24kHz
+        if buffer.format.sampleRate == 24000,
+           buffer.format.commonFormat == .pcmFormatFloat32,
+           buffer.format.channelCount == 1,
+           let channelData = buffer.floatChannelData?[0] {
         let frameCount = Int(buffer.frameLength)
         var int16Array = [Int16](repeating: 0, count: frameCount)
-        
         for i in 0..<frameCount {
             let sample = channelData[i] * 32767.0
             int16Array[i] = Int16(max(-32767, min(32767, sample)))
         }
-        
         return Data(bytes: int16Array, count: frameCount * MemoryLayout<Int16>.size)
+        }
+        // As a last resort, drop chunk to avoid corrupting server VAD with wrong sample rate
+        if enableVerboseAudioLogging {
+            print("⚠️ [AUDIO] Dropping mic chunk due to unsupported format (no converter)")
+        }
+        return Data()
     }
     
     // MARK: - Audio Playback - Streaming Solution
@@ -473,27 +565,51 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             print("🎵 [AUDIO] Playback queue started - blocking user input")
         }
 
-        // Append new audio data to the streaming buffer
-        streamingAudioBuffer.append(data)
+        // Append and schedule on background queue to avoid main-thread contention
+        playbackQueue.async { [weak self] in
+            guard let self = self else { return }
+            // Append new audio data to the streaming buffer
+            self.streamingAudioBuffer.append(data)
 
-        // Process buffered audio (setup already done in startAudioCapture)
-        processStreamingAudio()
+            // Quality: track interarrival and queue depth
+            if self.enableAudioQualityLogs {
+                let now = CFAbsoluteTimeGetCurrent()
+                if self.audioOutStats.firstDeltaAt == 0 { self.audioOutStats.firstDeltaAt = now }
+                if self.audioOutStats.lastAppendAt > 0 {
+                    let iatMs = (now - self.audioOutStats.lastAppendAt) * 1000.0
+                    self.audioOutStats.interarrivalMsSum += iatMs
+                    if iatMs > self.audioOutStats.interarrivalMsMax { self.audioOutStats.interarrivalMsMax = iatMs }
+                }
+                self.audioOutStats.lastAppendAt = now
+                self.audioOutStats.totalBytes += data.count
+                let queueDepth = self.streamingAudioBuffer.count / 960 // ~20ms@24k/16-bit
+                if queueDepth > self.audioOutStats.queueDepthMax { self.audioOutStats.queueDepthMax = queueDepth }
+            }
+
+            // Process buffered audio (setup already done in startAudioCapture)
+            self.processStreamingAudio()
+        }
     }
     
     private func setupStreamingAudio() {
         // Create audio nodes for streaming playback
         audioPlayerNode = AVAudioPlayerNode()
         audioMixerNode = AVAudioMixerNode()
+        // Simple EQ used here as a dynamics stage to add headroom (low output gain)
+        let limiter = AVAudioUnitEQ(numberOfBands: 1)
+        limiter.globalGain = outputHeadroomDb // reduce overall level to avoid clipping
+        audioLimiterNode = limiter
         
         guard let playerNode = audioPlayerNode,
               let mixerNode = audioMixerNode,
-              let audioEngine = audioEngine else {
+              let audioEngine = audioEngine,
+              let limiterNode = audioLimiterNode else {
             print("❌ Failed to create audio nodes for streaming")
             return
         }
         
-        // Use OpenAI's native format for the player node (24kHz, Int16, Mono)
-        let openAIFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24000, channels: 1, interleaved: false)!
+        // Use OpenAI's native format for input (24kHz, Int16, Mono)
+        let openAIFormat = pcm24Format
         
         // Use system's preferred format for output (usually 48kHz, Float32, Stereo)
         let systemFormat = audioEngine.outputNode.outputFormat(forBus: 0)
@@ -504,160 +620,151 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         
         // Attach nodes to the audio engine
         audioEngine.attach(playerNode)
+        audioEngine.attach(limiterNode)
         audioEngine.attach(mixerNode)
         
-        // Connect with automatic format conversion (nil = let AVAudioEngine choose compatible formats)
-        // PlayerNode (24kHz Int16 Mono) -> MixerNode -> OutputNode (System format)
-        audioEngine.connect(playerNode, to: mixerNode, format: nil)
+        // Let the engine choose a compatible processing format between nodes
+        audioEngine.connect(playerNode, to: limiterNode, format: nil)
+        audioEngine.connect(limiterNode, to: mixerNode, format: nil)
         audioEngine.connect(mixerNode, to: audioEngine.outputNode, format: nil)
         
-        print("✅ Streaming audio setup complete with automatic format conversion")
+        // Build a converter from OpenAI (24k Int16 mono) -> player's processing format
+        let playerFormat = playerNode.outputFormat(forBus: 0)
+        audioConverter = AVAudioConverter(from: openAIFormat, to: playerFormat)
+        if let conv = audioConverter {
+            print("🔄 Audio converter created: \(conv.inputFormat.sampleRate)Hz -> \(conv.outputFormat.sampleRate)Hz")
+        } else {
+            print("⚠️ Failed to create audio converter; audio may sound incorrect")
+        }
+        
+        print("✅ Streaming audio setup complete with automatic format conversion and headroom \(outputHeadroomDb) dB")
     }
     
     private func processStreamingAudio() {
-        guard let playerNode = audioPlayerNode,
-              streamingAudioBuffer.count >= 480 else { // Process in 20ms chunks (480 samples at 24kHz)
-            // If no more data to process, mark playback queue as complete
-            if streamingAudioBuffer.isEmpty {
-                isPlayingQueue = false
-                print("🔇 [AUDIO] Playback queue completed - ready for user input")
+        guard let playerNode = audioPlayerNode else { return }
+        
+        // Scheduling state
+        struct SchedulingState { static var queuedChunks: Int = 0; static var queuedMs: Double = 0; static var queuedMsMax: Double = 0; static var underflows: Int = 0; static var scheduleLatencyMsSum: Double = 0; static var scheduleLatencyMsMax: Double = 0; static var scheduleCount: Int = 0 }
+        let srcChunkBytes = 480 * 2 // ~20ms @24kHz Int16 mono
+        let prebufferTargetMs: Double = 350 // aim for a larger prebuffer to reduce starvation
+        var scheduledSomething = false
+
+        // While we have data and our queued duration is below target, schedule more
+        while streamingAudioBuffer.count >= srcChunkBytes && SchedulingState.queuedMs < prebufferTargetMs {
+            let audioDataSize = srcChunkBytes
+            let slice = streamingAudioBuffer.prefix(audioDataSize)
+            guard let converter = audioConverter else {
+                print("❌ No audio converter; dropping chunk")
+                streamingAudioBuffer.removeFirst(audioDataSize)
+                if enableAudioQualityLogs { audioOutStats.dropCount += 1 }
+                continue
             }
-            return
-        }
-        
-        // Get the player node's current output format (after connection setup)
-        let playerOutputFormat = playerNode.outputFormat(forBus: 0)
-        
-        // Debug: Log the actual format the player expects
-        if Int.random(in: 1...50) == 1 {
-            print("🔊 Player expects: \(playerOutputFormat.sampleRate)Hz, \(playerOutputFormat.channelCount) channels, format: \(playerOutputFormat.commonFormat.rawValue)")
-        }
-        
-        // Process in 20ms chunks for smooth playback (based on OpenAI's 24kHz rate)
-        let openAIChunkSize = 480 * 2 // 480 samples * 2 bytes per sample at 24kHz
-        let audioDataSize = min(streamingAudioBuffer.count, openAIChunkSize)
-        let inputFrameCount = audioDataSize / 2 // 16-bit = 2 bytes per frame
-        
-        // Calculate output frame count based on player's sample rate
-        let sampleRateRatio = playerOutputFormat.sampleRate / 24000.0 // Player rate / OpenAI rate
-        let outputFrameCount = Int(Double(inputFrameCount) * sampleRateRatio)
-        
-        // Create buffer using player node's expected format with correct frame count
-        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: playerOutputFormat, frameCapacity: AVAudioFrameCount(outputFrameCount)) else {
-            print("❌ Failed to create output buffer with format: \(playerOutputFormat)")
-            return
-        }
-        
-        // Convert OpenAI's mono PCM16 data to match player node's expected format
-        let audioData = streamingAudioBuffer.prefix(audioDataSize)
-        
-        // Handle different format types (Int16 vs Float32)
-        if playerOutputFormat.commonFormat == .pcmFormatInt16 {
-            // Player expects Int16 format
-            if playerOutputFormat.channelCount == 1 {
-                // Mono Int16
-                audioData.withUnsafeBytes { bytes in
-                    guard let int16Pointer = bytes.bindMemory(to: Int16.self).baseAddress,
-                          let channelData = outputBuffer.int16ChannelData else { return }
-                    // For mono Int16, handle sample rate conversion
-                    for i in 0..<inputFrameCount {
-                        let sample = int16Pointer[i]
-                        // Upsample by duplicating samples for sample rate conversion
-                        let outputStartIndex = Int(Double(i) * sampleRateRatio)
-                        let outputEndIndex = min(Int(Double(i + 1) * sampleRateRatio), outputFrameCount)
-                        
-                        for j in outputStartIndex..<outputEndIndex {
-                            channelData[0][j] = sample
-                        }
-                    }
-                }
-            } else {
-                // Stereo Int16
-                audioData.withUnsafeBytes { bytes in
-                    guard let int16Pointer = bytes.bindMemory(to: Int16.self).baseAddress,
-                          let leftChannel = outputBuffer.int16ChannelData?[0],
-                          let rightChannel = outputBuffer.int16ChannelData?[1] else { return }
-                    
-                    for i in 0..<inputFrameCount {
-                        let sample = int16Pointer[i]
-                        // Upsample by duplicating samples for sample rate conversion
-                        let outputStartIndex = Int(Double(i) * sampleRateRatio)
-                        let outputEndIndex = min(Int(Double(i + 1) * sampleRateRatio), outputFrameCount)
-                        
-                        for j in outputStartIndex..<outputEndIndex {
-                            leftChannel[j] = sample
-                            rightChannel[j] = sample
-                        }
-                    }
+            let srcFormat = converter.inputFormat
+            guard let srcBuffer = AVAudioPCMBuffer(pcmFormat: srcFormat, frameCapacity: AVAudioFrameCount(audioDataSize / 2)) else {
+                print("❌ Failed to create source PCM buffer")
+                break
+            }
+            srcBuffer.frameLength = AVAudioFrameCount(audioDataSize / 2)
+            slice.withUnsafeBytes { rawPtr in
+                if let src = rawPtr.bindMemory(to: Int16.self).baseAddress,
+                   let dstI16 = srcBuffer.int16ChannelData?[0] {
+                    dstI16.assign(from: src, count: Int(srcBuffer.frameLength))
                 }
             }
-        } else if playerOutputFormat.commonFormat == .pcmFormatFloat32 {
-            // Player expects Float32 format - convert Int16 to Float32
-            if playerOutputFormat.channelCount == 1 {
-                // Mono Float32
-                audioData.withUnsafeBytes { bytes in
-                    guard let int16Pointer = bytes.bindMemory(to: Int16.self).baseAddress,
-                          let channelData = outputBuffer.floatChannelData else { return }
-                    
-                    for i in 0..<inputFrameCount {
-                        let floatSample = Float(int16Pointer[i]) / 32767.0
-                        // Upsample by duplicating samples for sample rate conversion
-                        let outputStartIndex = Int(Double(i) * sampleRateRatio)
-                        let outputEndIndex = min(Int(Double(i + 1) * sampleRateRatio), outputFrameCount)
-                        
-                        for j in outputStartIndex..<outputEndIndex {
-                            channelData[0][j] = floatSample
+            // Prepare destination buffer
+            let dstFormat = converter.outputFormat
+            let ratio = dstFormat.sampleRate / srcFormat.sampleRate
+            let dstCapacity = max(1, Int(Double(srcBuffer.frameLength) * ratio) + 16)
+            guard let dstBuffer = AVAudioPCMBuffer(pcmFormat: dstFormat, frameCapacity: AVAudioFrameCount(dstCapacity)) else { break }
+
+            var error: NSError?
+            let inputBlock: AVAudioConverterInputBlock = { inNumPackets, outStatus in
+                outStatus.pointee = .haveData
+                return srcBuffer
+            }
+            let t0c = CFAbsoluteTimeGetCurrent()
+            let status = converter.convert(to: dstBuffer, error: &error, withInputFrom: inputBlock)
+            let t1c = CFAbsoluteTimeGetCurrent()
+            if status == .error || error != nil {
+                if enableVerboseAudioLogging { print("❌ Audio convert error: \(error?.localizedDescription ?? "unknown")") }
+                if enableAudioQualityLogs { audioOutStats.dropCount += 1 }
+                // Drop this chunk and continue
+                streamingAudioBuffer.removeFirst(audioDataSize)
+                continue
+            }
+            // Update quality stats
+            if enableAudioQualityLogs {
+                audioOutStats.convertMsSum += (t1c - t0c) * 1000.0
+                let fmt = dstBuffer.format
+                var peak: Double = 0
+                var rms: Double = 0
+                if fmt.commonFormat == .pcmFormatFloat32, let ch0 = dstBuffer.floatChannelData?[0] {
+                    let n = Int(dstBuffer.frameLength)
+                    var sumsq: Double = 0
+                    for i in 0..<n { let v = Double(ch0[i]); let av = abs(v); if av > peak { peak = av }; sumsq += v * v }
+                    rms = n > 0 ? sqrt(sumsq / Double(n)) : 0
+                } else if fmt.commonFormat == .pcmFormatInt16, let ch0 = dstBuffer.int16ChannelData?[0] {
+                    let n = Int(dstBuffer.frameLength)
+                    var sumsq: Double = 0
+                    for i in 0..<n { let v = Double(ch0[i]) / 32768.0; let av = abs(v); if av > peak { peak = av }; sumsq += v * v }
+                    rms = n > 0 ? sqrt(sumsq / Double(n)) : 0
+                }
+                if peak > audioOutStats.peakMax { audioOutStats.peakMax = peak }
+                audioOutStats.rmsSum += rms
+                audioOutStats.chunkCount += 1
+            }
+
+            // Schedule buffer and update queue metrics
+            let bufferMs = (Double(dstBuffer.frameLength) / dstBuffer.format.sampleRate) * 1000.0
+            let t0s = CFAbsoluteTimeGetCurrent()
+            playerNode.scheduleBuffer(dstBuffer) { [weak self] in
+                // Decrement queued on background to avoid main thread stalls
+                self?.playbackQueue.async {
+                    SchedulingState.queuedChunks = max(0, SchedulingState.queuedChunks - 1)
+                    SchedulingState.queuedMs = max(0, SchedulingState.queuedMs - bufferMs)
+                    // Detect underflow: if no more queued and no data to schedule
+                    if let self = self, self.streamingAudioBuffer.count < srcChunkBytes && self.audioPlayerNode?.isPlaying == true {
+                        SchedulingState.underflows += 1
+                        if self.enablePlaybackSchedulingLogs {
+                            print("⚠️ [AUDIO] Potential playback underflow (no queued buffers)")
                         }
                     }
-                }
-            } else {
-                // Stereo Float32
-                audioData.withUnsafeBytes { bytes in
-                    guard let int16Pointer = bytes.bindMemory(to: Int16.self).baseAddress,
-                          let leftChannel = outputBuffer.floatChannelData?[0],
-                          let rightChannel = outputBuffer.floatChannelData?[1] else { return }
-                    
-                    for i in 0..<inputFrameCount {
-                        let floatSample = Float(int16Pointer[i]) / 32767.0
-                        // Upsample by duplicating samples for sample rate conversion
-                        let outputStartIndex = Int(Double(i) * sampleRateRatio)
-                        let outputEndIndex = min(Int(Double(i + 1) * sampleRateRatio), outputFrameCount)
-                        
-                        for j in outputStartIndex..<outputEndIndex {
-                            leftChannel[j] = floatSample
-                            rightChannel[j] = floatSample
-                        }
-                    }
+                    // Try to schedule more
+                    self?.processStreamingAudio()
                 }
             }
-        } else {
-            print("❌ Unsupported audio format: \(playerOutputFormat.commonFormat.rawValue)")
-            return
+            let t1s = CFAbsoluteTimeGetCurrent()
+            let schedLatencyMs = (t1s - t0s) * 1000.0
+            SchedulingState.scheduleLatencyMsSum += schedLatencyMs
+            if schedLatencyMs > SchedulingState.scheduleLatencyMsMax { SchedulingState.scheduleLatencyMsMax = schedLatencyMs }
+            SchedulingState.scheduleCount += 1
+            SchedulingState.queuedChunks += 1
+            SchedulingState.queuedMs += bufferMs
+            if SchedulingState.queuedMs > SchedulingState.queuedMsMax { SchedulingState.queuedMsMax = SchedulingState.queuedMs }
+            scheduledSomething = true
+            // Consume source bytes
+            streamingAudioBuffer.removeFirst(audioDataSize)
         }
-        
-        outputBuffer.frameLength = AVAudioFrameCount(outputFrameCount)
-        
-        // Schedule buffer for playback (AVAudioEngine handles 24kHz->48kHz conversion automatically)
-        playerNode.scheduleBuffer(outputBuffer) { [weak self] in
-            DispatchQueue.main.async {
-                self?.processStreamingAudio()
-            }
+
+        if scheduledSomething && enablePlaybackSchedulingLogs {
+            print("🎛️ [AUDIO] Queued chunks=\(SchedulingState.queuedChunks) (~\(Int(SchedulingState.queuedMs)) ms), scheduled in avg \(String(format: "%.2f", SchedulingState.scheduleLatencyMsSum / Double(max(1, SchedulingState.scheduleCount)))) ms")
         }
-        
-        // Start playing if not already playing
-        if !playerNode.isPlaying {
+
+        // Start playing if not already
+        if scheduledSomething && !playerNode.isPlaying {
             playerNode.play()
             isPlayingQueue = true
-            print("🎵 Started streaming audio playback")
+            if enableVerboseAudioLogging { print("🎵 Started streaming audio playback") }
+            if enableAudioQualityLogs && audioOutStats.firstPlayAt == 0 { audioOutStats.firstPlayAt = CFAbsoluteTimeGetCurrent() }
         }
         
-        // Remove processed data from buffer
-        streamingAudioBuffer.removeFirst(audioDataSize)
-        
-        // Check if we're done playing
+        // If no data and not playing, playback is done
         if streamingAudioBuffer.isEmpty && !playerNode.isPlaying {
             isPlayingQueue = false
             print("✅ Streaming audio playback completed")
+            if enableAudioQualityLogs {
+                printAudioQualitySummary(tag: "drain", isFinal: true)
+            }
         }
     }
     
@@ -731,14 +838,13 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         let ephemeralKey = try await getEphemeralKey()
         print("🔐 [CONNECT] Retrieved ephemeral key")
         
-        // Create WebSocket connection
+        // Create WebSocket connection (GA model, no beta header)
         guard let url = URL(string: "wss://api.openai.com/v1/realtime?model=gpt-realtime") else {
             throw NSError(domain: "OpenAIRealtimeService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid WebSocket URL"])
         }
         
         var request = URLRequest(url: url)
         request.setValue("Bearer \(ephemeralKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("realtime=v1", forHTTPHeaderField: "openai-beta")
         request.timeoutInterval = 30.0
         
         webSocketTask = urlSession.webSocketTask(with: request)
@@ -769,6 +875,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     
     func disconnect() {
         print("🔌 Disconnecting from OpenAI Realtime API...")
+        // Emit final summary on disconnect in case playback hasn't drained
+        printAudioQualitySummary(tag: "disconnect", isFinal: true)
         
         // Stop audio capture first to prevent engine issues
         stopAudioCapture()
@@ -810,7 +918,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     
     // MARK: - Private Methods
     private func getEphemeralKey() async throws -> String {
-        guard let url = URL(string: "https://api.openai.com/v1/realtime/sessions") else {
+        // Latest docs: POST /v1/realtime/client_secrets returns { value, session }
+        guard let url = URL(string: "https://api.openai.com/v1/realtime/client_secrets") else {
             throw NSError(domain: "OpenAIRealtimeService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid API URL"])
         }
         
@@ -819,9 +928,13 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        let requestBody = [
+        // Provide minimal session seed per docs if desired; keep server defaults otherwise
+        let requestBody: [String: Any] = [
+            "session": [
+                "type": "realtime",
             "model": "gpt-realtime",
-            "voice": "coral"
+                "instructions": "You are Guido, a helpful travel companion."
+            ]
         ]
         
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
@@ -833,20 +946,62 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         }
         
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        guard let clientSecret = json?["client_secret"] as? [String: Any],
-              let value = clientSecret["value"] as? String else {
+        // New schema: top-level { value: string, session: {...} }
+        if let value = json?["value"] as? String {
+            return value
+        }
+        // Back-compat fallback
+        if let clientSecret = json?["client_secret"] as? [String: Any], let value = clientSecret["value"] as? String {
+        return value
+        }
+        else {
             throw NSError(domain: "OpenAIRealtimeService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Invalid response format"])
         }
-        
-        return value
     }
     
     private func configureSession() async throws {
-        let sessionConfig = SessionUpdateEvent(
-            eventId: UUID().uuidString,
-            session: SessionUpdateEvent.SessionConfig(
-                instructions: """
-                You are Guido, a helpful and conversational AI travel companion with access to real-time tools and location data. You're designed to have natural, flowing conversations about travel while providing personalized, location-aware assistance.
+        // Build GA session.update payload per latest Realtime API
+        let eventId = UUID().uuidString
+        let vadType = VADConfig.useSemanticVAD ? "semantic_vad" : "server_vad"
+        let toolsArray: [[String: Any]] = {
+            do {
+                let defs = MCPToolCoordinator.getAllToolDefinitions()
+                let data = try JSONEncoder().encode(defs)
+                return (try JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
+            } catch {
+                print("⚠️ Failed to encode tool definitions: \(error)")
+                return []
+            }
+        }()
+        var turnDetection: [String: Any] = [
+            "type": vadType,
+            "create_response": true,
+            "interrupt_response": true
+        ]
+        if !VADConfig.useSemanticVAD {
+            turnDetection["threshold"] = VADConfig.serverThreshold
+            turnDetection["prefix_padding_ms"] = VADConfig.serverPrefixPadding
+            turnDetection["silence_duration_ms"] = VADConfig.serverSilenceDuration
+        } else {
+            turnDetection["eagerness"] = VADConfig.semanticEagerness
+        }
+        var sessionDict: [String: Any] = [
+            "type": "realtime",
+            "model": "gpt-realtime",
+            "output_modalities": ["audio"],
+            "audio": [
+                "input": [
+                    "format": ["type": "audio/pcm", "rate": 24000],
+                    "transcription": ["model": "gpt-4o-transcribe", "language": "en"],
+                    "turn_detection": turnDetection
+                ],
+                "output": [
+                    "format": ["type": "audio/pcm", "rate": 24000],
+                    "voice": "marin"
+                ]
+            ],
+            "instructions": """
+                You are Guido, a helpful, upbeat and conversational AI travel companion with access to real-time tools and location data. You're designed to have natural, flowing conversations about travel while providing personalized, location-aware assistance.
                 
                 Guidelines:
                 - Keep responses natural and conversational
@@ -893,23 +1048,30 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 - INTERRUPTION AWARENESS: When a user interrupts you mid-response, acknowledge what you were doing before switching context. For example: "Oh, I was just about to tell you about those dessert places, but let me help you find lunch options instead" or "I see you want something different - let me switch from dessert to lunch recommendations"
                 - This verbal feedback replaces artificial beeps and provides natural user experience
                 """,
-                voice: "coral",
-                inputAudioFormat: "pcm16",
-                outputAudioFormat: "pcm16",
-                inputAudioTranscription: SessionUpdateEvent.SessionConfig.TranscriptionConfig(),
-                turnDetection: SessionUpdateEvent.SessionConfig.TurnDetectionConfig(),
-                temperature: 0.75,
-                maxResponseOutputTokens: "inf",
-                toolChoice: "auto",
-                tools: MCPToolCoordinator.getAllToolDefinitions()
-            )
-        )
-        
-        try await sendEvent(sessionConfig)
-        let vadType = VADConfig.useSemanticVAD ? "semantic_vad" : "server_vad"
+            "tool_choice": "auto",
+            "tools": toolsArray
+        ]
+        // GA session.update does not accept temperature/max_output_tokens at session level
+        let payload: [String: Any] = [
+            "type": "session.update",
+            "event_id": eventId,
+            "session": sessionDict
+        ]
+        try await sendRawEvent(payload)
         let eagerness = VADConfig.useSemanticVAD ? VADConfig.semanticEagerness : "N/A"
         print("✅ Session configured with \(vadType) (eagerness: \(eagerness), auto-response: true, interrupts: enabled)")
         print("🔧 VAD Settings: Type=\(vadType), Threshold=\(VADConfig.serverThreshold), SilenceDuration=\(VADConfig.serverSilenceDuration)ms, PrefixPadding=\(VADConfig.serverPrefixPadding)ms")
+    }
+
+    private func sendRawEvent(_ payload: [String: Any]) async throws {
+        guard let webSocketTask = webSocketTask else {
+            throw NSError(domain: "OpenAIRealtimeService", code: 4, userInfo: [NSLocalizedDescriptionKey: "Not connected"])
+        }
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        if let str = String(data: data, encoding: .utf8), str.contains("\"type\":\"session.update\"") {
+            print("🔍 [DEBUG] Sending session.update JSON: \(str)")
+        }
+        try await webSocketTask.send(.string(String(data: data, encoding: .utf8)!))
     }
     
     private func startListening() {
@@ -1044,7 +1206,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                     }
                 }
                 
-            case "response.audio_transcript.delta":
+            case "response.audio_transcript.delta", "response.output_audio_transcript.delta":
                 if let transcriptEvent = try? JSONDecoder().decode(AudioTranscriptEvent.self, from: eventData) {
                     print("📝 AI transcript delta: '\(transcriptEvent.delta)'")
                     // Find the last streaming assistant message (not just the last message)
@@ -1063,7 +1225,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                     }
                 }
                 
-            case "response.audio_transcript.done":
+            case "response.audio_transcript.done", "response.output_audio_transcript.done":
                 // Mark the last streaming AI message as complete
                 print("🔍 Looking for streaming AI message to complete. Conversation has \(conversation.count) messages")
                 if let lastStreamingIndex = conversation.lastIndex(where: { $0.role == "assistant" && $0.isStreaming }) {
@@ -1073,7 +1235,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                     print("⚠️ No streaming AI message found to mark as complete")
                 }
                 
-            case "response.audio.delta":
+            case "response.audio.delta", "response.output_audio.delta":
                 if let audioEvent = try? JSONDecoder().decode(AudioDeltaEvent.self, from: eventData) {
                     // Check if we're in an interrupted state - ignore audio if so
                     if conversationState == .listening {
@@ -1093,10 +1255,13 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                     print("❌ [AI_AUDIO] Failed to decode audio delta event")
                 }
                 
-            case "response.audio.done":
+            case "response.audio.done", "response.output_audio.done":
                 print("🎵 [AI_AUDIO] Audio response completed - setting isAIResponding=false")
                 // Re-enable microphone input after AI finishes speaking
                 isAIResponding = false
+                
+                // Emit snapshot at response done (playback may still be flushing)
+                printAudioQualitySummary(tag: "response_done", isFinal: false)
                 
                 // Reset playback queue to allow user input
                 await MainActor.run {
@@ -1114,24 +1279,48 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 print("✅ [AI_AUDIO] AI audio completed - buffer cleared - ready for user input")
                 // Notify audio manager that streaming should finish
                 NotificationCenter.default.post(name: .realtimeAudioStreamCompleted, object: nil)
+            
+            case "response.output_text.delta":
+                if let root = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any],
+                   let delta = root["delta"] as? String {
+                    if let idx = conversation.lastIndex(where: { $0.role == "assistant" && $0.isStreaming }) {
+                        conversation[idx].content += delta
+                    } else {
+                        conversation.append(RealtimeMessage(role: "assistant", content: delta, timestamp: Date(), isStreaming: true))
+                    }
+                }
+            case "response.output_text.done":
+                if let idx = conversation.lastIndex(where: { $0.role == "assistant" && $0.isStreaming }) {
+                    conversation[idx].isStreaming = false
+                }
                 
             case "response.done":
                 lastResponseCompleteTime = Date().timeIntervalSince1970
                 
                 // Extract response completion details
                 var completionInfo = "unknown"
-                if let responseData = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any] {
-                    if let responseId = responseData["id"] as? String {
+                if let root = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any],
+                   let responseObj = root["response"] as? [String: Any] {
+                    if let responseId = responseObj["id"] as? String {
                         completionInfo = "ID: \(responseId)"
-                        // Clear current response ID if it matches
                         if currentResponseId == responseId {
                             currentResponseId = nil
                             print("🔄 [RESPONSE] Cleared current response ID: \(responseId)")
                         }
                     }
-                    if let status = responseData["status"] as? String {
+                    if let status = responseObj["status"] as? String {
                         completionInfo += ", status: \(status)"
+                        if status == "failed" {
+                            let err = responseObj["error"] as? [String: Any]
+                            let msg = err?["message"] as? String ?? "(no message)"
+                            print("🚨 [RESPONSE] Failure reason: \(msg)")
+                            if let raw = String(data: eventData, encoding: .utf8) {
+                                print("📄 [RESPONSE] Raw response.done JSON: \(raw)")
+                            }
+                        }
                     }
+                } else if let raw = String(data: eventData, encoding: .utf8) {
+                    print("📄 [RESPONSE] Raw response.done JSON (unparsed): \(raw)")
                 }
                 
                 print("✅ [RESPONSE] Response completed at \(lastResponseCompleteTime) (\(completionInfo))")
@@ -1147,14 +1336,13 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             case "response.cancelled":
                 let cancelTime = Date().timeIntervalSince1970
                 var cancelInfo = "unknown"
-                if let responseData = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any] {
-                    if let responseId = responseData["id"] as? String {
+                if let root = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any],
+                   let responseObj = root["response"] as? [String: Any],
+                   let responseId = responseObj["id"] as? String {
                         cancelInfo = "ID: \(responseId)"
-                        // Clear current response ID if it matches
                         if currentResponseId == responseId {
                             currentResponseId = nil
                             print("🔄 [CANCEL] Cleared cancelled response ID: \(responseId)")
-                        }
                     }
                 }
                 
@@ -1195,12 +1383,30 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 
                 speechStartTime = currentTime
                 conversationState = .listening
+
+                // Start a safety fallback: if server doesn't emit speech_stopped soon, manually commit
+                lastServerSpeechStartTime = currentTime
+                commitFallbackWorkItem?.cancel()
+                let work = DispatchWorkItem { [weak self] in
+                    guard let self = self else { return }
+                    // If we haven't seen speech_stopped or response start, force commit + response
+                    let now = Date().timeIntervalSince1970
+                    let sinceStop = self.lastServerSpeechStopTime > 0 ? now - self.lastServerSpeechStopTime : nil
+                    if self.currentResponseId == nil && (sinceStop == nil || sinceStop! > 0.5) {
+                        print("⚠️ [VAD] Fallback commit fired (no speech_stopped) - forcing commit + response.create")
+                        Task { await self.sendManualCommitAndRequest() }
+                    }
+                }
+                commitFallbackWorkItem = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
                 
             case "input_audio_buffer.speech_stopped":
                 let currentTime = Date().timeIntervalSince1970
                 let speechDuration = speechStartTime > 0 ? currentTime - speechStartTime : 0
                 print("🤐 [VAD] Speech stopped at \(currentTime) - duration: \(speechDuration)s")
                 print("🤐 [VAD] AI responding: \(isAIResponding), conversation state: \(conversationState)")
+                lastServerSpeechStopTime = currentTime
+                commitFallbackWorkItem?.cancel()
                 
                 // Let server VAD handle all speech detection - trust OpenAI's optimized algorithms
                 
@@ -1225,11 +1431,16 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 
             case "conversation.item.created":
                 print("💬 Conversation item created")
+            case "conversation.item.added":
+                print("💬 Conversation item added")
+            case "conversation.item.done":
+                print("💬 Conversation item done")
                 
             case "response.created":
-                // Extract response ID for tracking
-                if let responseData = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any],
-                   let responseId = responseData["id"] as? String {
+                // Extract nested response.id per latest schema
+                if let root = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any],
+                   let responseObj = root["response"] as? [String: Any],
+                   let responseId = responseObj["id"] as? String {
                     currentResponseId = responseId
                     print("🤖 [RESPONSE] AI response created with ID: \(responseId)")
                 } else {
@@ -1239,6 +1450,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 conversationState = .thinking
                 // Play thinking sound when AI starts processing
                 audioFeedbackManager.playThinkingSound()
+                commitFallbackWorkItem?.cancel()
                 
             case "response.output_item.added":
                 print("📝 Response output item added")
@@ -1286,6 +1498,9 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                    let error = errorData["error"] as? [String: Any],
                    let message = error["message"] as? String {
                     print("❌ OpenAI API Error: \(message)")
+                    if let raw = String(data: eventData, encoding: .utf8) {
+                        print("📄 [ERROR] Raw error JSON: \(raw)")
+                    }
                     
                     // Handle specific error types
                     if message.contains("buffer too small") {
@@ -1306,6 +1521,9 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                     }
                 } else {
                     print("❌ Unknown API error received")
+                    if let raw = String(data: eventData, encoding: .utf8) {
+                        print("📄 [ERROR] Raw event JSON (unknown error): \(raw)")
+                    }
                 }
                 
             case "input_audio_buffer.cleared":
@@ -1414,6 +1632,19 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             print("❌ [REQUEST] Failed to request response: \(error)")
         }
     }
+
+    private func sendManualCommitAndRequest() async {
+        // Manually commit buffer and request a response when server VAD stalls
+        struct Commit: Codable { let type: String = "input_audio_buffer.commit"; let event_id: String }
+        let commit = Commit(event_id: UUID().uuidString)
+        do {
+            try await sendEvent(commit)
+            print("🧷 [FALLBACK] input_audio_buffer.commit sent")
+        } catch {
+            print("❌ [FALLBACK] Failed to commit buffer: \(error)")
+        }
+        await requestResponse()
+    }
     
     func clearInputAudioBuffer() async {
         guard isConnected else { 
@@ -1441,26 +1672,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         }
     }
     
-    func clearOutputAudioBuffer() async {
-        guard isConnected else { return }
-        
-        struct ClearOutputBufferEvent: Codable {
-            let type: String
-            let event_id: String
-        }
-        
-        let event = ClearOutputBufferEvent(
-            type: "output_audio_buffer.clear",
-            event_id: UUID().uuidString
-        )
-        
-        do {
-            try await sendEvent(event)
-            print("🧹 Cleared output audio buffer")
-        } catch {
-            print("❌ Failed to clear output audio buffer: \(error)")
-        }
-    }
+    // Removed: output_audio_buffer.clear is WebRTC-only; not supported over WebSocket
     
     func cancelResponse() async {
         guard isConnected else { return }
@@ -1468,11 +1680,13 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         struct CancelResponseEvent: Codable {
             let type: String
             let event_id: String
+            let response_id: String?
         }
         
         let event = CancelResponseEvent(
             type: "response.cancel",
-            event_id: UUID().uuidString
+            event_id: UUID().uuidString,
+            response_id: currentResponseId
         )
         
         do {
@@ -1515,8 +1729,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         }
         
         // 4. CLEAR AUDIO BUFFERS
-        await clearOutputAudioBuffer()
-        print("🛑 [INTERRUPT] Step 4: Output buffer cleared")
+        // WebSocket path: no output buffer clear; rely on cancel + local stop
+        print("🛑 [INTERRUPT] Step 4: Output buffer clear skipped (WebSocket)")
         
         await clearInputAudioBuffer()
         print("🛑 [INTERRUPT] Step 4: Input buffer cleared")
