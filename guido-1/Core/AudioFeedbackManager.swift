@@ -40,14 +40,13 @@ class AudioFeedbackManager: ObservableObject {
     
     // MARK: - Audio Session Setup
     private func setupAudioSession() {
+        // Do not override the app's primary audio session category.
+        // Realtime audio uses .playAndRecord/.voiceChat. We only ensure the session is active.
         do {
-            let audioSession = AVAudioSession.sharedInstance()
-            // Use playback category for better compatibility with system audio
-            try audioSession.setCategory(.playback, options: [.mixWithOthers, .duckOthers])
-            try audioSession.setActive(true)
-            print("✅ Audio feedback session configured")
+            try AVAudioSession.sharedInstance().setActive(true)
+            print("✅ Audio feedback session configured (no category override)")
         } catch {
-            print("❌ Failed to setup audio feedback session: \(error)")
+            print("❌ Failed to activate audio feedback session: \(error)")
         }
     }
     

@@ -11,6 +11,7 @@ import CoreLocation
 struct ImmersiveConversationView: View {
     @EnvironmentObject var appState: AppState
     @StateObject private var realtimeService: OpenAIRealtimeService
+    @StateObject private var webrtcManager = WebRTCManager()
     @StateObject private var locationManager = LocationManager()
     
     // UI State
@@ -165,6 +166,17 @@ struct ImmersiveConversationView: View {
                 isConnecting = false
             }
         }
+        .onReceive(webrtcManager.$connectionStatus) { status in
+            switch status {
+            case .connected:
+                realtimeService.isConnected = true
+                isConnecting = false
+                // Play connection chime when WebRTC is ready
+                realtimeService.audioFeedbackManager.playConnectionSound()
+            case .disconnected:
+                realtimeService.isConnected = false
+            }
+        }
         .onAppear {
             setupView()
         }
@@ -246,6 +258,14 @@ struct ImmersiveConversationView: View {
         realtimeService.audioFeedbackManager.setEnabled(true)
         realtimeService.audioFeedbackManager.setVolume(0.7)
         realtimeService.audioFeedbackManager.realtimeService = realtimeService
+        
+        // Wire WebRTC to reuse existing handlers/tools
+        webrtcManager.eventSink = realtimeService
+        webrtcManager.setTools(realtimeService.getToolDefinitionsJSON())
+        realtimeService.setEventSender(webrtcManager)
+        
+        // Ensure tools have access to LocationManager before conversation starts
+        realtimeService.setLocationManager(locationManager)
     }
     
     private func setupLocationTracking() {
@@ -256,25 +276,21 @@ struct ImmersiveConversationView: View {
         isConnecting = true
         connectionError = nil
         
-        Task {
-            do {
-                try await realtimeService.connect()
-                await MainActor.run {
-                    realtimeService.startStreaming()
-                    print("🌟 Immersive conversation started")
-                }
-            } catch {
-                await MainActor.run {
-                    connectionError = error.localizedDescription
-                    isConnecting = false
-                }
-                print("❌ Failed to start immersive conversation: \(error)")
-            }
-        }
+        // Safety: ensure LocationManager is wired just before starting
+        realtimeService.setLocationManager(locationManager)
+        
+        // Use WebRTCManager for voice transport; reuse existing instructions/tools
+        webrtcManager.startConnection(
+            apiKey: openAIAPIKey,
+            modelName: "gpt-realtime",
+            systemMessage: realtimeService.realtimeSystemInstructions(),
+            voice: "marin"
+        )
+        print("🌟 Immersive conversation started (WebRTC)")
     }
     
     private func stopConversation() {
-        realtimeService.stopStreaming()
+        webrtcManager.stopConnection()
         realtimeService.disconnect()
         hideResults()
         print("🌟 Immersive conversation ended")
@@ -318,8 +334,7 @@ struct ImmersiveConversationView: View {
         let prompt = createExtractionPrompt(for: content)
         
         do {
-            // Access OpenAI service through AppState
-            let appState = AppState()
+            // Use existing environment AppState via @EnvironmentObject
             let response = try await appState.openAIChatService.generateStructuredData(prompt: prompt)
             let results = parseStructuredResponse(response)
             

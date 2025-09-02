@@ -1,0 +1,975 @@
+2025-09-02 10:54:23.340122-0400 guido-1[3087:179275] [PreviewsAgentExecutorLibrary] Looking up debug dylib relative path
+2025-09-02 10:54:23.340466-0400 guido-1[3087:179275] [PreviewsAgentExecutorLibrary] Found debug dylib relative path string `guido-1.debug.dylib`
+2025-09-02 10:54:23.340471-0400 guido-1[3087:179275] [PreviewsAgentExecutorLibrary] Looking up debug dylib entry point name
+2025-09-02 10:54:23.340473-0400 guido-1[3087:179275] [PreviewsAgentExecutorLibrary] No debug dylib entry point name defined.
+2025-09-02 10:54:23.340475-0400 guido-1[3087:179275] [PreviewsAgentExecutorLibrary] Looking up debug dylib install name
+2025-09-02 10:54:23.340477-0400 guido-1[3087:179275] [PreviewsAgentExecutorLibrary] Found debug dylib install name string `@rpath/guido-1.debug.dylib`
+2025-09-02 10:54:23.340479-0400 guido-1[3087:179275] [PreviewsAgentExecutorLibrary] Looking for Previews JIT link entry point.
+2025-09-02 10:54:23.340907-0400 guido-1[3087:179275] [PreviewsAgentExecutorLibrary] No Previews JIT entry point found.
+2025-09-02 10:54:23.340912-0400 guido-1[3087:179275] [PreviewsAgentExecutorLibrary] Gave PreviewsInjection a chance to run and it returned, continuing with debug dylib.
+2025-09-02 10:54:23.340914-0400 guido-1[3087:179275] [PreviewsAgentExecutorLibrary] Looking for main entry point.
+2025-09-02 10:54:23.340917-0400 guido-1[3087:179275] [PreviewsAgentExecutorLibrary] Opening debug dylib with '@rpath/guido-1.debug.dylib'
+2025-09-02 10:54:23.340923-0400 guido-1[3087:179275] [PreviewsAgentExecutorLibrary] Debug dylib handle: 0xbeab69e0
+2025-09-02 10:54:23.340925-0400 guido-1[3087:179275] [PreviewsAgentExecutorLibrary] No entry point found. Checking for alias.
+2025-09-02 10:54:23.340928-0400 guido-1[3087:179275] [PreviewsAgentExecutorLibrary] Calling provided entry point.
+🔑 API Keys loaded from Config.plist
+🔑 OpenAI API Key: ✅ LOADED (sk-proj-Ia...)
+🔑 ElevenLabs API Key: ✅ LOADED (sk_11e0f53...)
+🔑 Google API Key: ✅ LOADED (AIzaSyCSbU...)
+🔑 Supabase URL: ✅ LOADED
+🔑 Supabase Anon Key: ✅ LOADED (eyJhbG...)
+🌟 Immersive Conversation View initializing...
+📍 Started location tracking
+🗺️ LocationManager initialized
+🚀 Guido app launched successfully!
+💡 Tip: iOS Simulator messages above are normal system behavior
+📱 Look for emoji-prefixed messages for app-specific logs
+🔧 RealtimeToolManager initialized
+🔧 [MCPToolCoordinator] Initialized with migration state: Hybrid (Gradual Migration)
+✅ Audio feedback session configured (no category override)
+✅ Connection tone generated (thinking/completion handled by AI)
+✅ Audio session configured for voice chat (native device rate/buffer)
+🚀 OpenAI Realtime Service initialized
+📍 Started location tracking
+🗺️ LocationManager initialized
+📍 Started location tracking
+🗺️ LocationManager initialized
+🔧 [MCP] Registered tool: get_user_location
+🔧 [MCP] Registered tool: find_nearby_places
+🔧 [MCP] Registered tool: get_directions
+🔧 [MCP] Registered tool: find_nearby_restaurants
+🔧 [MCP] Registered tool: find_nearby_transport
+🔧 [MCP] Registered tool: find_nearby_landmarks
+🔧 [MCP] Registered tool: find_nearby_services
+🔧 [MCP] Registered tool: find_places_on_route
+✅ [MCPToolCoordinator] Registered 8 location tools with MCP client
+2025-09-02 10:54:23.584685-0400 guido-1[3087:179275] Metal API Validation Enabled
+✅ [MCPToolCoordinator] MCP client ready
+✅ [MCP] Connected to in-process MCP server
+📍 Started location tracking
+📍 Location updated: 40.77845410009771, -73.9883884200288
+📍 Location updated: 40.77845410009771, -73.9883884200288
+📍 Location updated: 40.77845410009771, -73.9883884200288
+📍 Started location tracking
+📍 Location updated: 40.78149031999999, -73.98761748999998
+📍 Started location tracking
+📍 Location updated: 40.77845410009771, -73.9883884200288
+📍 Location updated: 40.77845410009771, -73.9883884200288
+🔧 [MCPToolCoordinator] MCP client state: connecting
+🔧 [MCPToolCoordinator] MCP client state: initializing
+🔧 [MCP] Registered tool: get_user_location
+🔧 [MCP] Registered tool: find_nearby_places
+🔧 [MCP] Registered tool: get_directions
+🔧 [MCP] Registered tool: get_weather
+🔧 [MCP] Registered tool: check_calendar
+🔧 [MCP] Registered tool: get_local_time
+🔧 [MCP] Registered tool: find_transportation
+🔧 [MCP] Registered tool: find_local_events
+🔧 [MCP] Registered tool: find_nearby_restaurants
+🔧 [MCP] Registered tool: find_nearby_transport
+🔧 [MCP] Registered tool: find_nearby_landmarks
+🔧 [MCP] Registered tool: find_nearby_services
+🔧 [MCP] Registered tool: recommend_restaurants
+🔧 [MCP] Registered tool: currency_converter
+🔧 [MCP] Registered tool: translate_text
+🔧 [MCP] Registered tool: get_safety_info
+🔧 [MCP] Registered tool: check_travel_requirements
+🔧 [MCP] Registered tool: get_emergency_info
+🔧 [MCP] Registered tool: web_search
+🔧 [MCP] Registered tool: ai_response
+✅ [MCPToolCoordinator] Registered 20 tools with MCP client
+🌟 Immersive Conversation View initializing...
+📍 Address: New York NY, United States
+📍 Address: 180 Riverside Blvd, New York NY 10069, United States
+📍 Address: 180 Riverside Blvd, New York NY 10069, United States
+📍 Found 1 nearby places
+📍 Found 1 nearby places
+📍 Found 1 nearby places
+📍 Found 1 nearby places
+🔧 [MCP] Registered tool: get_user_location
+🔧 [MCP] Registered tool: find_nearby_places
+🔧 [MCP] Registered tool: get_directions
+🔧 [MCP] Registered tool: find_nearby_restaurants
+🔧 [MCP] Registered tool: find_nearby_transport
+🔧 [MCP] Registered tool: find_nearby_landmarks
+🔧 [MCP] Registered tool: find_nearby_services
+🔧 [MCP] Registered tool: find_places_on_route
+✅ [MCPToolCoordinator] Registered 8 location tools with MCP client
+🌟 Immersive conversation started (WebRTC)
+ICE Connection State changed to: RTCIceConnectionState(rawValue: 1)
+🔊 Playing connection sound
+✅ Connection sound played successfully
+🔧 [MCP] Registered tool: get_user_location
+🔧 [MCP] Registered tool: find_nearby_places
+🔧 [MCP] Registered tool: get_directions
+🔧 [MCP] Registered tool: find_nearby_restaurants
+🔧 [MCP] Registered tool: find_nearby_transport
+🔧 [MCP] Registered tool: find_nearby_landmarks
+🔧 [MCP] Registered tool: find_nearby_services
+🔧 [MCP] Registered tool: find_places_on_route
+✅ [MCPToolCoordinator] Registered 8 location tools with MCP client
+ICE Connection State changed to: RTCIceConnectionState(rawValue: 2)
+Data channel state changed: RTCDataChannelState(rawValue: 1)
+session.update event sent.
+📥 Received event: session.created
+✅ Session created successfully
+📥 Received event: session.updated
+✅ Session updated successfully
+ICE Connection State changed to: RTCIceConnectionState(rawValue: 3)
+ICE Connection State changed to: RTCIceConnectionState(rawValue: 6)
+Data channel state changed: RTCDataChannelState(rawValue: 2)
+Data channel state changed: RTCDataChannelState(rawValue: 3)
+🔌 Disconnecting from OpenAI Realtime API...
+🔌 [DISCONNECT] Tool execution state reset
+🔇 Stop thinking sound disabled - AI handles audio feedback
+✅ Disconnected from OpenAI Realtime API
+🌟 Immersive conversation ended
+🔊 Playing disconnection sound
+✅ Disconnection sound played successfully
+🚶‍♂️ Movement: Stationary - Speed: 0.0 km/h
+🚶‍♂️ Movement: Moving - Speed: 2013245.1 km/h
+🔧 [MCP] Registered tool: get_user_location
+🔧 [MCP] Registered tool: find_nearby_places
+🔧 [MCP] Registered tool: get_directions
+🔧 [MCP] Registered tool: find_nearby_restaurants
+🔧 [MCP] Registered tool: find_nearby_transport
+🔧 [MCP] Registered tool: find_nearby_landmarks
+🔧 [MCP] Registered tool: find_nearby_services
+🔧 [MCP] Registered tool: find_places_on_route
+✅ [MCPToolCoordinator] Registered 8 location tools with MCP client
+🌟 Immersive conversation started (WebRTC)
+🚶‍♂️ Movement: Stationary - Speed: 0.0 km/h
+🚶‍♂️ Movement: Moving - Speed: 2013245.1 km/h
+ICE Connection State changed to: RTCIceConnectionState(rawValue: 1)
+🔊 Playing connection sound
+✅ Connection sound played successfully
+🔧 [MCP] Registered tool: get_user_location
+🔧 [MCP] Registered tool: find_nearby_places
+🔧 [MCP] Registered tool: get_directions
+🔧 [MCP] Registered tool: find_nearby_restaurants
+🔧 [MCP] Registered tool: find_nearby_transport
+🔧 [MCP] Registered tool: find_nearby_landmarks
+🔧 [MCP] Registered tool: find_nearby_services
+🔧 [MCP] Registered tool: find_places_on_route
+✅ [MCPToolCoordinator] Registered 8 location tools with MCP client
+ICE Connection State changed to: RTCIceConnectionState(rawValue: 2)
+Data channel state changed: RTCDataChannelState(rawValue: 1)
+session.update event sent.
+📥 Received event: session.created
+✅ Session created successfully
+📥 Received event: session.updated
+✅ Session updated successfully
+📥 Received event: input_audio_buffer.speech_started
+🗣️ [VAD] Speech started detected by VAD at 1756824885.544734
+🗣️ [VAD] Current state: AI responding=false, tool executing=false
+🗣️ [VAD] Time since: last response=0.00s, buffer clear=0.00s, tool start=0.00s
+🗣️ [VAD] Pending tool calls: 0, Response ID: none
+🗣️ [VAD] Speech started during idle state - normal turn taking
+📥 Received event: input_audio_buffer.speech_stopped
+🤐 [VAD] Speech stopped at 1756824886.392239 - duration: 0.8475050926208496s
+🤐 [VAD] AI responding: false, conversation state: listening
+✅ [VAD] Speech stopped (duration: 0.85s) - server VAD processing
+🔄 [VAD] Server VAD will handle turn detection automatically
+📥 Received event: input_audio_buffer.committed
+✅ [BUFFER] Audio buffer committed successfully
+📥 Received event: conversation.item.created
+💬 Conversation item created
+📥 Received event: response.created
+🤖 [RESPONSE] AI response created with ID: resp_CBMhCiUbGid59ghIpDH3R
+🔇 Thinking sound disabled - AI handles audio feedback
+📥 Received event: response.output_item.added
+📝 Response output item added
+📥 Received event: conversation.item.created
+💬 Conversation item created
+📥 Received event: response.content_part.added
+📄 Response content part added
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: 'Hey'
+🗨️ Added new AI message to conversation. Total messages: 1
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' there'
+📝 Updated streaming AI message. Total length: 9
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '!'
+📝 Updated streaming AI message. Total length: 10
+📥 Received event: output_audio_buffer.started
+📋 [UNKNOWN] Unhandled event type: output_audio_buffer.started
+📄 [UNKNOWN] Raw event JSON: {"type":"output_audio_buffer.started","event_id":"event_0a1978d35ed34c19","response_id":"resp_CBMhCiUbGid59ghIpDH3R"}
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' I'
+📝 Updated streaming AI message. Total length: 12
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '’m'
+📝 Updated streaming AI message. Total length: 14
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' doing'
+📝 Updated streaming AI message. Total length: 20
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' great'
+📝 Updated streaming AI message. Total length: 26
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ','
+📝 Updated streaming AI message. Total length: 27
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' thanks'
+📝 Updated streaming AI message. Total length: 34
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' for'
+📝 Updated streaming AI message. Total length: 38
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' asking'
+📝 Updated streaming AI message. Total length: 45
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '.'
+📝 Updated streaming AI message. Total length: 46
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' How'
+📝 Updated streaming AI message. Total length: 50
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' about'
+📝 Updated streaming AI message. Total length: 56
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' you'
+📝 Updated streaming AI message. Total length: 60
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '?'
+📝 Updated streaming AI message. Total length: 61
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' Are'
+📝 Updated streaming AI message. Total length: 65
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' you'
+📝 Updated streaming AI message. Total length: 69
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' on'
+📝 Updated streaming AI message. Total length: 72
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' a'
+📝 Updated streaming AI message. Total length: 74
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' trip'
+📝 Updated streaming AI message. Total length: 79
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' or'
+📝 Updated streaming AI message. Total length: 82
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' planning'
+📝 Updated streaming AI message. Total length: 91
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' something'
+📝 Updated streaming AI message. Total length: 101
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' fun'
+📝 Updated streaming AI message. Total length: 105
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '?'
+📝 Updated streaming AI message. Total length: 106
+📥 Received event: response.audio.done
+🎵 [AI_AUDIO] Audio response completed - setting isAIResponding=false
+✅ [AI_AUDIO] AI audio completed - buffer cleared - ready for user input
+📥 Received event: response.audio_transcript.done
+🔍 Looking for streaming AI message to complete. Conversation has 1 messages
+✅ AI transcript completed: 'Hey there! I’m doing great, thanks for asking. How about you? Are you on a trip or planning something fun?'
+📥 Received event: response.content_part.done
+✅ Response content part completed
+📥 Received event: response.output_item.done
+✅ Response output item completed
+📥 Received event: response.done
+🔄 [RESPONSE] Cleared current response ID: resp_CBMhCiUbGid59ghIpDH3R
+✅ [RESPONSE] Response completed at 1756824888.624289 (ID: resp_CBMhCiUbGid59ghIpDH3R, status: completed)
+✅ [RESPONSE] Final state: tool executing=false, pending tools=0
+🔄 [RESPONSE] Ready for next speech input
+📥 Received event: rate_limits.updated
+📊 Rate limits updated
+🚶‍♂️ Movement: Stationary - Speed: 0.0 km/h
+🚶‍♂️ Movement: Moving - Speed: 2013245.1 km/h
+📥 Received event: output_audio_buffer.stopped
+📋 [UNKNOWN] Unhandled event type: output_audio_buffer.stopped
+📄 [UNKNOWN] Raw event JSON: {"type":"output_audio_buffer.stopped","event_id":"event_2d9ea60328ce4eed","response_id":"resp_CBMhCiUbGid59ghIpDH3R"}
+📥 Received event: input_audio_buffer.speech_started
+🗣️ [VAD] Speech started detected by VAD at 1756824895.852407
+🗣️ [VAD] Current state: AI responding=false, tool executing=false
+🗣️ [VAD] Time since: last response=7.23s, buffer clear=0.00s, tool start=0.00s
+🗣️ [VAD] Pending tool calls: 0, Response ID: none
+🗣️ [VAD] Speech started during idle state - normal turn taking
+📥 Received event: input_audio_buffer.speech_stopped
+🤐 [VAD] Speech stopped at 1756824896.611042 - duration: 0.7586350440979004s
+🤐 [VAD] AI responding: false, conversation state: listening
+✅ [VAD] Speech stopped (duration: 0.76s) - server VAD processing
+🔄 [VAD] Server VAD will handle turn detection automatically
+📥 Received event: input_audio_buffer.committed
+✅ [BUFFER] Audio buffer committed successfully
+📥 Received event: conversation.item.created
+💬 Conversation item created
+📥 Received event: response.created
+🤖 [RESPONSE] AI response created with ID: resp_CBMhMvmvIlFW50Fy2sX61
+🔇 Thinking sound disabled - AI handles audio feedback
+📥 Received event: response.output_item.added
+📝 Response output item added
+📥 Received event: conversation.item.created
+💬 Conversation item created
+📥 Received event: response.content_part.added
+📄 Response content part added
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: 'Let'
+🗨️ Added new AI message to conversation. Total messages: 2
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' me'
+📝 Updated streaming AI message. Total length: 6
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' check'
+📝 Updated streaming AI message. Total length: 12
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' that'
+📝 Updated streaming AI message. Total length: 17
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' for'
+📝 Updated streaming AI message. Total length: 21
+📥 Received event: output_audio_buffer.started
+📋 [UNKNOWN] Unhandled event type: output_audio_buffer.started
+📄 [UNKNOWN] Raw event JSON: {"type":"output_audio_buffer.started","event_id":"event_d4f6330c059545c7","response_id":"resp_CBMhMvmvIlFW50Fy2sX61"}
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' you'
+📝 Updated streaming AI message. Total length: 25
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '.'
+📝 Updated streaming AI message. Total length: 26
+📥 Received event: response.audio.done
+🎵 [AI_AUDIO] Audio response completed - setting isAIResponding=false
+✅ [AI_AUDIO] AI audio completed - buffer cleared - ready for user input
+📥 Received event: response.audio_transcript.done
+🔍 Looking for streaming AI message to complete. Conversation has 2 messages
+✅ AI transcript completed: 'Let me check that for you.'
+📥 Received event: response.content_part.done
+✅ Response content part completed
+📥 Received event: response.output_item.done
+✅ Response output item completed
+📥 Received event: rate_limits.updated
+📊 Rate limits updated
+📥 Received event: response.output_item.added
+📝 Response output item added
+📥 Received event: conversation.item.created
+💬 Conversation item created
+📥 Received event: response.function_call_arguments.delta
+🔧 Function call arguments delta received
+📥 Received event: response.function_call_arguments.done
+🔧 [TOOL] Function call arguments completed - starting execution
+🔧 [TOOL] Tool: get_user_location, Call ID: call_cerG4XppQ0SQ3tLg
+🔧 [TOOL] Now tracking 1 pending tool call(s): ["call_cerG4XppQ0SQ3tLg"]
+🔧 [TOOL] Tool execution state: isToolExecuting=true
+🔧 [TOOL] Starting execution: get_user_location with ID: call_cerG4XppQ0SQ3tLg
+🔧 [TOOL] Execution started at: 1756824898.0406752
+🔧 [TOOL] Raw arguments string: {}
+🔧 [TOOL] Parsed arguments: [:]
+🔧 [TOOL] Arguments validation: ✅ JSON-serializable
+🔧 [MCPToolCoordinator] Executing 'get_user_location' via MCP
+📥 Received event: response.output_item.done
+✅ Response output item completed
+🗺️ [MCPToolCoordinator] Routing 'get_user_location' to LocationMCPServer
+🗺️ [LocationMCPServer] Executing tool: get_user_location
+✅ [LocationMCPServer] Location retrieved: 40.77845410009771, -73.9883884200288
+🔧 [MCP] Tool 'get_user_location' executed successfully
+✅ [MCPToolCoordinator] MCP execution successful for 'get_user_location'
+🔧 [TOOL] Completed execution: get_user_location in 0.00s
+🔧 [TOOL] Result success: true
+🔧 [TOOL] Removed call ID call_cerG4XppQ0SQ3tLg from tracking
+🔧 [TOOL] Remaining pending tools: 0 - []
+🔧 [TOOL] All tool calls completed - isToolExecuting=false
+📤 [WebRTC] Sending event via sender: {"type":"conversation.item.create","event_id":"84DBA2D0-A5F2-4373-824C-EFD08B47B7EB","item":{"type":"function_call_output","call_id":"call_cerG4XppQ0SQ3tLg","ou...
+✅ Tool response sent for call ID: call_cerG4XppQ0SQ3tLg
+🎤 Tool result: {"longitude":-73.988388420028798,"speed_kmh":2013245.1291379547,"movement_status":"Moving","latitude":40.778454100097711,"altitude":40.43658447265625,"address":"New York NY, United States","accuracy":19.844745963687814,"timestamp":"2025-09-02T14:54:23Z"}
+📤 [WebRTC] Sending response.create via sender: {"type":"response.create","event_id":"A448AA15-1BED-4BAE-B3A4-E1B2602C209B"}
+📥 Received event: response.done
+🔄 [RESPONSE] Cleared current response ID: resp_CBMhMvmvIlFW50Fy2sX61
+✅ [RESPONSE] Response completed at 1756824898.046245 (ID: resp_CBMhMvmvIlFW50Fy2sX61, status: completed)
+✅ [RESPONSE] Final state: tool executing=false, pending tools=0
+🔄 [RESPONSE] Ready for next speech input
+📥 Received event: rate_limits.updated
+📊 Rate limits updated
+📥 Received event: conversation.item.created
+💬 Conversation item created
+📥 Received event: response.created
+🤖 [RESPONSE] AI response created with ID: resp_CBMhOJNdvf71pwVbdtDws
+🔇 Thinking sound disabled - AI handles audio feedback
+📥 Received event: output_audio_buffer.stopped
+📋 [UNKNOWN] Unhandled event type: output_audio_buffer.stopped
+📄 [UNKNOWN] Raw event JSON: {"type":"output_audio_buffer.stopped","event_id":"event_e1b66d64339141c9","response_id":"resp_CBMhMvmvIlFW50Fy2sX61"}
+📥 Received event: response.output_item.added
+📝 Response output item added
+📥 Received event: conversation.item.created
+💬 Conversation item created
+📥 Received event: response.content_part.added
+📄 Response content part added
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: 'I'
+🗨️ Added new AI message to conversation. Total messages: 3
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' see'
+📝 Updated streaming AI message. Total length: 5
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' you're'
+📝 Updated streaming AI message. Total length: 12
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' in'
+📝 Updated streaming AI message. Total length: 15
+📥 Received event: output_audio_buffer.started
+📋 [UNKNOWN] Unhandled event type: output_audio_buffer.started
+📄 [UNKNOWN] Raw event JSON: {"type":"output_audio_buffer.started","event_id":"event_4fbc4094fdb24bc8","response_id":"resp_CBMhOJNdvf71pwVbdtDws"}
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' New'
+📝 Updated streaming AI message. Total length: 19
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' York'
+📝 Updated streaming AI message. Total length: 24
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ','
+📝 Updated streaming AI message. Total length: 25
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' NY'
+📝 Updated streaming AI message. Total length: 28
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ','
+📝 Updated streaming AI message. Total length: 29
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' and'
+📝 Updated streaming AI message. Total length: 33
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' it'
+📝 Updated streaming AI message. Total length: 36
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' looks'
+📝 Updated streaming AI message. Total length: 42
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' like'
+📝 Updated streaming AI message. Total length: 47
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' you're'
+📝 Updated streaming AI message. Total length: 54
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' currently'
+📝 Updated streaming AI message. Total length: 64
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' moving'
+📝 Updated streaming AI message. Total length: 71
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '.'
+📝 Updated streaming AI message. Total length: 72
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' Are'
+📝 Updated streaming AI message. Total length: 76
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' you'
+📝 Updated streaming AI message. Total length: 80
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' traveling'
+📝 Updated streaming AI message. Total length: 90
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' somewhere'
+📝 Updated streaming AI message. Total length: 100
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' in'
+📝 Updated streaming AI message. Total length: 103
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' the'
+📝 Updated streaming AI message. Total length: 107
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' city'
+📝 Updated streaming AI message. Total length: 112
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ','
+📝 Updated streaming AI message. Total length: 113
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' or'
+📝 Updated streaming AI message. Total length: 116
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' do'
+📝 Updated streaming AI message. Total length: 119
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' you'
+📝 Updated streaming AI message. Total length: 123
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' need'
+📝 Updated streaming AI message. Total length: 128
+ICE Connection State changed to: RTCIceConnectionState(rawValue: 3)
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' some'
+📝 Updated streaming AI message. Total length: 133
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' help'
+📝 Updated streaming AI message. Total length: 138
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' with'
+📝 Updated streaming AI message. Total length: 143
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' directions'
+📝 Updated streaming AI message. Total length: 154
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '?'
+📝 Updated streaming AI message. Total length: 155
+📥 Received event: response.audio.done
+🎵 [AI_AUDIO] Audio response completed - setting isAIResponding=false
+✅ [AI_AUDIO] AI audio completed - buffer cleared - ready for user input
+📥 Received event: response.audio_transcript.done
+🔍 Looking for streaming AI message to complete. Conversation has 3 messages
+✅ AI transcript completed: 'I see you're in New York, NY, and it looks like you're currently moving. Are you traveling somewhere in the city, or do you need some help with directions?'
+📥 Received event: response.content_part.done
+✅ Response content part completed
+📥 Received event: response.output_item.done
+✅ Response output item completed
+📥 Received event: response.done
+🔄 [RESPONSE] Cleared current response ID: resp_CBMhOJNdvf71pwVbdtDws
+✅ [RESPONSE] Response completed at 1756824900.556199 (ID: resp_CBMhOJNdvf71pwVbdtDws, status: completed)
+✅ [RESPONSE] Final state: tool executing=false, pending tools=0
+🔄 [RESPONSE] Ready for next speech input
+📥 Received event: rate_limits.updated
+📊 Rate limits updated
+🚶‍♂️ Movement: Stationary - Speed: 0.0 km/h
+🚶‍♂️ Movement: Moving - Speed: 2013245.1 km/h
+📥 Received event: output_audio_buffer.stopped
+📋 [UNKNOWN] Unhandled event type: output_audio_buffer.stopped
+📄 [UNKNOWN] Raw event JSON: {"type":"output_audio_buffer.stopped","event_id":"event_384a335aa4b74b68","response_id":"resp_CBMhOJNdvf71pwVbdtDws"}
+📥 Received event: input_audio_buffer.speech_started
+🗣️ [VAD] Speech started detected by VAD at 1756824907.6228352
+🗣️ [VAD] Current state: AI responding=false, tool executing=false
+🗣️ [VAD] Time since: last response=7.07s, buffer clear=0.00s, tool start=9.58s
+🗣️ [VAD] Pending tool calls: 0, Response ID: none
+🗣️ [VAD] Speech started during idle state - normal turn taking
+📥 Received event: input_audio_buffer.speech_stopped
+🤐 [VAD] Speech stopped at 1756824909.115797 - duration: 1.4929618835449219s
+🤐 [VAD] AI responding: false, conversation state: listening
+✅ [VAD] Speech stopped (duration: 1.49s) - server VAD processing
+🔄 [VAD] Server VAD will handle turn detection automatically
+📥 Received event: input_audio_buffer.committed
+✅ [BUFFER] Audio buffer committed successfully
+📥 Received event: conversation.item.created
+💬 Conversation item created
+📥 Received event: response.created
+🤖 [RESPONSE] AI response created with ID: resp_CBMhZwms65V1TNGmKgUZZ
+🔇 Thinking sound disabled - AI handles audio feedback
+📥 Received event: response.output_item.added
+📝 Response output item added
+📥 Received event: conversation.item.created
+💬 Conversation item created
+📥 Received event: response.content_part.added
+📄 Response content part added
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: 'You're'
+🗨️ Added new AI message to conversation. Total messages: 4
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' in'
+📝 Updated streaming AI message. Total length: 9
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' New'
+📝 Updated streaming AI message. Total length: 13
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' York'
+📝 Updated streaming AI message. Total length: 18
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ','
+📝 Updated streaming AI message. Total length: 19
+📥 Received event: output_audio_buffer.started
+📋 [UNKNOWN] Unhandled event type: output_audio_buffer.started
+📄 [UNKNOWN] Raw event JSON: {"type":"output_audio_buffer.started","event_id":"event_63917a80bf2744e0","response_id":"resp_CBMhZwms65V1TNGmKgUZZ"}
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' NY'
+📝 Updated streaming AI message. Total length: 22
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ','
+📝 Updated streaming AI message. Total length: 23
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' and'
+📝 Updated streaming AI message. Total length: 27
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' the'
+📝 Updated streaming AI message. Total length: 31
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' accuracy'
+📝 Updated streaming AI message. Total length: 40
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' suggests'
+📝 Updated streaming AI message. Total length: 49
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' you're'
+📝 Updated streaming AI message. Total length: 56
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' within'
+📝 Updated streaming AI message. Total length: 63
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' about'
+📝 Updated streaming AI message. Total length: 69
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' '
+📝 Updated streaming AI message. Total length: 70
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '20'
+📝 Updated streaming AI message. Total length: 72
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' meters'
+📝 Updated streaming AI message. Total length: 79
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' of'
+📝 Updated streaming AI message. Total length: 82
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' the'
+📝 Updated streaming AI message. Total length: 86
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' pinpoint'
+📝 Updated streaming AI message. Total length: 95
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '.'
+📝 Updated streaming AI message. Total length: 96
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' The'
+📝 Updated streaming AI message. Total length: 100
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' coordinates'
+📝 Updated streaming AI message. Total length: 112
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' I'
+📝 Updated streaming AI message. Total length: 114
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' have'
+📝 Updated streaming AI message. Total length: 119
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' for'
+📝 Updated streaming AI message. Total length: 123
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' you'
+📝 Updated streaming AI message. Total length: 127
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' are'
+📝 Updated streaming AI message. Total length: 131
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' roughly'
+📝 Updated streaming AI message. Total length: 139
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' latitude'
+📝 Updated streaming AI message. Total length: 148
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' '
+📝 Updated streaming AI message. Total length: 149
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '40'
+📝 Updated streaming AI message. Total length: 151
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '.'
+📝 Updated streaming AI message. Total length: 152
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '778'
+📝 Updated streaming AI message. Total length: 155
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '5'
+📝 Updated streaming AI message. Total length: 156
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' and'
+📝 Updated streaming AI message. Total length: 160
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' longitude'
+📝 Updated streaming AI message. Total length: 170
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' -'
+📝 Updated streaming AI message. Total length: 172
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '73'
+📝 Updated streaming AI message. Total length: 174
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '.'
+📝 Updated streaming AI message. Total length: 175
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '988'
+📝 Updated streaming AI message. Total length: 178
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '4'
+📝 Updated streaming AI message. Total length: 179
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '.'
+📝 Updated streaming AI message. Total length: 180
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' If'
+📝 Updated streaming AI message. Total length: 183
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' you'
+📝 Updated streaming AI message. Total length: 187
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' need'
+📝 Updated streaming AI message. Total length: 192
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' even'
+📝 Updated streaming AI message. Total length: 197
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' more'
+📝 Updated streaming AI message. Total length: 202
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' precise'
+📝 Updated streaming AI message. Total length: 210
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' details'
+📝 Updated streaming AI message. Total length: 218
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' or'
+📝 Updated streaming AI message. Total length: 221
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' directions'
+📝 Updated streaming AI message. Total length: 232
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ','
+📝 Updated streaming AI message. Total length: 233
+🚶‍♂️ Movement: Stationary - Speed: 0.0 km/h
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' let'
+📝 Updated streaming AI message. Total length: 237
+🚶‍♂️ Movement: Moving - Speed: 2013245.1 km/h
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' me'
+📝 Updated streaming AI message. Total length: 240
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' know'
+📝 Updated streaming AI message. Total length: 245
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '.'
+📝 Updated streaming AI message. Total length: 246
+📥 Received event: response.audio.done
+🎵 [AI_AUDIO] Audio response completed - setting isAIResponding=false
+✅ [AI_AUDIO] AI audio completed - buffer cleared - ready for user input
+📥 Received event: response.audio_transcript.done
+🔍 Looking for streaming AI message to complete. Conversation has 4 messages
+✅ AI transcript completed: 'You're in New York, NY, and the accuracy suggests you're within about 20 meters of the pinpoint. The coordinates I have for you are roughly latitude 40.7785 and longitude -73.9884. If you need even more precise details or directions, let me know.'
+📥 Received event: response.content_part.done
+✅ Response content part completed
+📥 Received event: response.output_item.done
+✅ Response output item completed
+📥 Received event: response.done
+🔄 [RESPONSE] Cleared current response ID: resp_CBMhZwms65V1TNGmKgUZZ
+✅ [RESPONSE] Response completed at 1756824914.0311642 (ID: resp_CBMhZwms65V1TNGmKgUZZ, status: completed)
+✅ [RESPONSE] Final state: tool executing=false, pending tools=0
+🔄 [RESPONSE] Ready for next speech input
+📥 Received event: rate_limits.updated
+📊 Rate limits updated
+🚶‍♂️ Movement: Stationary - Speed: 0.0 km/h
+🚶‍♂️ Movement: Moving - Speed: 2013245.1 km/h
+📥 Received event: output_audio_buffer.stopped
+📋 [UNKNOWN] Unhandled event type: output_audio_buffer.stopped
+📄 [UNKNOWN] Raw event JSON: {"type":"output_audio_buffer.stopped","event_id":"event_0bc0c8859b3c4f57","response_id":"resp_CBMhZwms65V1TNGmKgUZZ"}
+📥 Received event: input_audio_buffer.speech_started
+🗣️ [VAD] Speech started detected by VAD at 1756824930.8410091
+🗣️ [VAD] Current state: AI responding=false, tool executing=false
+🗣️ [VAD] Time since: last response=16.81s, buffer clear=0.00s, tool start=32.80s
+🗣️ [VAD] Pending tool calls: 0, Response ID: none
+🗣️ [VAD] Speech started during idle state - normal turn taking
+📥 Received event: input_audio_buffer.speech_stopped
+🤐 [VAD] Speech stopped at 1756824932.42256 - duration: 1.5815508365631104s
+🤐 [VAD] AI responding: false, conversation state: listening
+✅ [VAD] Speech stopped (duration: 1.58s) - server VAD processing
+🔄 [VAD] Server VAD will handle turn detection automatically
+📥 Received event: input_audio_buffer.committed
+✅ [BUFFER] Audio buffer committed successfully
+📥 Received event: conversation.item.created
+💬 Conversation item created
+📥 Received event: response.created
+🤖 [RESPONSE] AI response created with ID: resp_CBMhweVR8fo7LoEV7wxIR
+🔇 Thinking sound disabled - AI handles audio feedback
+📥 Received event: response.output_item.added
+📝 Response output item added
+📥 Received event: conversation.item.created
+💬 Conversation item created
+📥 Received event: response.content_part.added
+📄 Response content part added
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: 'You're'
+🗨️ Added new AI message to conversation. Total messages: 5
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' near'
+📝 Updated streaming AI message. Total length: 11
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' an'
+📝 Updated streaming AI message. Total length: 14
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' address'
+📝 Updated streaming AI message. Total length: 22
+📥 Received event: output_audio_buffer.started
+📋 [UNKNOWN] Unhandled event type: output_audio_buffer.started
+📄 [UNKNOWN] Raw event JSON: {"type":"output_audio_buffer.started","event_id":"event_f0692a0c606c41eb","response_id":"resp_CBMhweVR8fo7LoEV7wxIR"}
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' in'
+📝 Updated streaming AI message. Total length: 25
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' New'
+📝 Updated streaming AI message. Total length: 29
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' York'
+📝 Updated streaming AI message. Total length: 34
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ','
+📝 Updated streaming AI message. Total length: 35
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' NY'
+📝 Updated streaming AI message. Total length: 38
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ','
+📝 Updated streaming AI message. Total length: 39
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' United'
+📝 Updated streaming AI message. Total length: 46
+🚶‍♂️ Movement: Stationary - Speed: 0.0 km/h
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' States'
+📝 Updated streaming AI message. Total length: 53
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '.'
+📝 Updated streaming AI message. Total length: 54
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' The'
+📝 Updated streaming AI message. Total length: 58
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' exact'
+📝 Updated streaming AI message. Total length: 64
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' street'
+📝 Updated streaming AI message. Total length: 71
+🚶‍♂️ Movement: Moving - Speed: 2013245.1 km/h
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' or'
+📝 Updated streaming AI message. Total length: 74
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' building'
+📝 Updated streaming AI message. Total length: 83
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' number'
+📝 Updated streaming AI message. Total length: 90
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' isn't'
+📝 Updated streaming AI message. Total length: 96
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' pinpoint'
+📝 Updated streaming AI message. Total length: 105
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: 'ed'
+📝 Updated streaming AI message. Total length: 107
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' here'
+📝 Updated streaming AI message. Total length: 112
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ','
+📝 Updated streaming AI message. Total length: 113
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' but'
+📝 Updated streaming AI message. Total length: 117
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' you're'
+📝 Updated streaming AI message. Total length: 124
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' in'
+📝 Updated streaming AI message. Total length: 127
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' the'
+📝 Updated streaming AI message. Total length: 131
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' vicinity'
+📝 Updated streaming AI message. Total length: 140
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '.'
+📝 Updated streaming AI message. Total length: 141
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' If'
+📝 Updated streaming AI message. Total length: 144
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' you'
+📝 Updated streaming AI message. Total length: 148
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '’re'
+📝 Updated streaming AI message. Total length: 151
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' looking'
+📝 Updated streaming AI message. Total length: 159
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' for'
+📝 Updated streaming AI message. Total length: 163
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' a'
+📝 Updated streaming AI message. Total length: 165
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' more'
+📝 Updated streaming AI message. Total length: 170
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' specific'
+📝 Updated streaming AI message. Total length: 179
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' spot'
+📝 Updated streaming AI message. Total length: 184
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ','
+📝 Updated streaming AI message. Total length: 185
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' you'
+📝 Updated streaming AI message. Total length: 189
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' might'
+📝 Updated streaming AI message. Total length: 195
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' want'
+📝 Updated streaming AI message. Total length: 200
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' to'
+📝 Updated streaming AI message. Total length: 203
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' check'
+📝 Updated streaming AI message. Total length: 209
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' a'
+📝 Updated streaming AI message. Total length: 211
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' map'
+📝 Updated streaming AI message. Total length: 215
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' on'
+📝 Updated streaming AI message. Total length: 218
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' your'
+📝 Updated streaming AI message. Total length: 223
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' device'
+📝 Updated streaming AI message. Total length: 230
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' for'
+📝 Updated streaming AI message. Total length: 234
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' the'
+📝 Updated streaming AI message. Total length: 238
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' exact'
+📝 Updated streaming AI message. Total length: 244
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: ' address'
+📝 Updated streaming AI message. Total length: 252
+📥 Received event: response.audio_transcript.delta
+📝 AI transcript delta: '.'
+📝 Updated streaming AI message. Total length: 253
+📥 Received event: response.audio.done
+🎵 [AI_AUDIO] Audio response completed - setting isAIResponding=false
+✅ [AI_AUDIO] AI audio completed - buffer cleared - ready for user input
+📥 Received event: response.audio_transcript.done
+🔍 Looking for streaming AI message to complete. Conversation has 5 messages
+✅ AI transcript completed: 'You're near an address in New York, NY, United States. The exact street or building number isn't pinpointed here, but you're in the vicinity. If you’re looking for a more specific spot, you might want to check a map on your device for the exact address.'
+📥 Received event: response.content_part.done
+✅ Response content part completed
+📥 Received event: response.output_item.done
+✅ Response output item completed
+📥 Received event: response.done
+🔄 [RESPONSE] Cleared current response ID: resp_CBMhweVR8fo7LoEV7wxIR
+✅ [RESPONSE] Response completed at 1756824936.568087 (ID: resp_CBMhweVR8fo7LoEV7wxIR, status: completed)
+✅ [RESPONSE] Final state: tool executing=false, pending tools=0
+🔄 [RESPONSE] Ready for next speech input
+📥 Received event: rate_limits.updated
+📊 Rate limits updated
+ICE Connection State changed to: RTCIceConnectionState(rawValue: 6)
+Data channel state changed: RTCDataChannelState(rawValue: 2)
+Data channel state changed: RTCDataChannelState(rawValue: 3)
+🔌 Disconnecting from OpenAI Realtime API...
+🔌 [DISCONNECT] Tool execution state reset
+🔇 Stop thinking sound disabled - AI handles audio feedback
+✅ Disconnected from OpenAI Realtime API
+🌟 Immersive conversation ended
+🚶‍♂️ Movement: Stationary - Speed: 0.0 km/h
+🔊 Playing disconnection sound
+✅ Disconnection sound played successfully
+🚶‍♂️ Movement: Moving - Speed: 2013245.1 km/h

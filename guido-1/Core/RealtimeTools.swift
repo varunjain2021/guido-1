@@ -586,6 +586,9 @@ class RealtimeToolManager: ObservableObject {
         }
         
         let context = locationManager.getCurrentLocationContext()
+        let friendly = locationManager.friendlyLocationString()
+        let clampedSpeed = min(max(context.speed, 0), 200.0)
+        let localTime = DateFormatter.localizedString(from: context.timestamp, dateStyle: .none, timeStyle: .short)
         
         let locationData: [String: Any] = [
             "latitude": context.location?.coordinate.latitude ?? 0,
@@ -593,8 +596,11 @@ class RealtimeToolManager: ObservableObject {
             "address": context.address ?? "Unknown",
             "city": context.city ?? "Unknown",
             "country": context.country ?? "Unknown",
+            "neighborhood": context.neighborhood ?? "",
             "is_moving": context.isMoving,
-            "speed_kmh": context.speed,
+            "speed_kmh": clampedSpeed,
+            "local_time": localTime,
+            "friendly_location": friendly,
             "nearby_places_count": context.nearbyPlaces.count,
             "timestamp": ISO8601DateFormatter().string(from: context.timestamp)
         ]

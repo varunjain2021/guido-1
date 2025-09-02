@@ -22,6 +22,7 @@ class LocationManager: NSObject, ObservableObject {
     @Published var isMoving = false
     @Published var averageSpeed: Double = 0.0 // km/h
     @Published var shouldTriggerProactiveGuide = false
+    @Published var currentNeighborhood: String?
     
     private let locationManager = CLLocationManager()
     private let geocoder = CLGeocoder()
@@ -157,6 +158,7 @@ class LocationManager: NSObject, ObservableObject {
             address: currentAddress,
             city: currentCity,
             country: currentCountry,
+            neighborhood: currentNeighborhood,
             nearbyPlaces: nearbyPlaces,
             isMoving: isMoving,
             speed: averageSpeed,
@@ -363,12 +365,13 @@ extension LocationManager: CLLocationManagerDelegate {
                     self?.currentAddress = formatted
                     self?.currentCity = postal.city
                     self?.currentCountry = postal.country
+                    if !postal.subLocality.isEmpty { self?.currentNeighborhood = postal.subLocality }
                 } else {
                     // Fallback: assemble from available components
                     var addressComponents: [String] = []
                     if let subThoroughfare = placemark.subThoroughfare { addressComponents.append(subThoroughfare) }
                     if let thoroughfare = placemark.thoroughfare { addressComponents.append(thoroughfare) }
-                    if let subLocality = placemark.subLocality { addressComponents.append(subLocality) }
+                    if let subLocality = placemark.subLocality { addressComponents.append(subLocality); self?.currentNeighborhood = subLocality }
                     if let locality = placemark.locality { addressComponents.append(locality); self?.currentCity = locality }
                     if let administrativeArea = placemark.administrativeArea { addressComponents.append(administrativeArea) }
                     if let postalCode = placemark.postalCode { addressComponents.append(postalCode) }
@@ -382,6 +385,20 @@ extension LocationManager: CLLocationManagerDelegate {
                 print("📍 Address: \(self?.currentAddress ?? "Unknown")")
             }
         }
+    }
+
+    // MARK: - Friendly Formatting
+    func friendlyLocationString() -> String {
+        var parts: [String] = []
+        if let address = currentAddress { parts.append(address) }
+        if let neighborhood = currentNeighborhood, !neighborhood.isEmpty {
+            if parts.isEmpty || !(parts.joined(separator: ", ").contains(neighborhood)) {
+                parts.append(neighborhood)
+            }
+        }
+        if let city = currentCity { parts.append(city) }
+        if let country = currentCountry { parts.append(country) }
+        return parts.isEmpty ? "Unknown location" : parts.joined(separator: ", ")
     }
 }
 
@@ -404,6 +421,7 @@ struct LocationContext {
     let address: String?
     let city: String?
     let country: String?
+    let neighborhood: String?
     let nearbyPlaces: [NearbyPlace]
     let isMoving: Bool
     let speed: Double

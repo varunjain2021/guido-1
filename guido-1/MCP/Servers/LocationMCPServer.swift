@@ -495,12 +495,16 @@ public class LocationMCPServer {
                 throw LocationMCPError.locationNotAvailable
             }
             
-            // Get movement status
+            // Get movement status (clamped to sane values)
             let movementStatus = await locationManager.isMoving ? "Moving" : "Stationary"
-            let speed = await locationManager.averageSpeed
+            let rawSpeed = await locationManager.averageSpeed
+            let speed = min(max(rawSpeed, 0), 200.0)
             
-            // Get address information
+            // Get friendly address and neighborhood
             let address = await locationManager.currentAddress ?? "Address unavailable"
+            let neighborhood = await locationManager.currentNeighborhood ?? ""
+            let friendly = await locationManager.friendlyLocationString()
+            let localTime = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .short)
             
             // Prepare result
             let result: [String: Any] = [
@@ -511,6 +515,9 @@ public class LocationMCPServer {
                 "movement_status": movementStatus,
                 "speed_kmh": speed,
                 "address": address,
+                "neighborhood": neighborhood,
+                "friendly_location": friendly,
+                "local_time": localTime,
                 "timestamp": ISO8601DateFormatter().string(from: currentLocation.timestamp)
             ]
             

@@ -378,9 +378,36 @@ public class MCPToolCoordinator: ObservableObject {
         
         if legacyResult.success {
             // Convert successful result to MCP content
-            let resultJson = try? JSONSerialization.data(withJSONObject: legacyResult.data)
-            let resultText = resultJson.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-            
+            let resultText: String
+            if let dict = legacyResult.data as? [String: Any] {
+                // Sanitize and encode dictionary
+                let sanitized = JSONSanitizer.sanitizeDictionary(dict)
+                if let data = try? JSONSerialization.data(withJSONObject: sanitized),
+                   let text = String(data: data, encoding: .utf8) {
+                    resultText = text
+                } else {
+                    resultText = "{}"
+                }
+            } else if let array = legacyResult.data as? [Any] {
+                // Encode array
+                if let data = try? JSONSerialization.data(withJSONObject: array),
+                   let text = String(data: data, encoding: .utf8) {
+                    resultText = text
+                } else {
+                    resultText = "[]"
+                }
+            } else if let str = legacyResult.data as? String {
+                // Plain text result
+                resultText = str
+            } else if let num = legacyResult.data as? NSNumber {
+                resultText = num.stringValue
+            } else if legacyResult.data is NSNull {
+                resultText = "null"
+            } else {
+                // Fallback stringification for unsupported types
+                resultText = String(describing: legacyResult.data)
+            }
+
             return MCPCallToolResponse(
                 content: [MCPContent(text: resultText)],
                 isError: false

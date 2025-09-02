@@ -381,7 +381,7 @@ public enum MCPErrorCode: Int {
 
 // MARK: - JSON Sanitization Utility
 
-private struct JSONSanitizer {
+struct JSONSanitizer {
     static func sanitizeDictionary(_ dictionary: [String: Any]) -> [String: Any] {
         var sanitized: [String: Any] = [:]
         
