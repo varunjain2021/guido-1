@@ -36,6 +36,7 @@ public enum ToolCategory: String, CaseIterable {
                 "get_user_location", 
                 "find_nearby_places", 
                 "get_directions",
+                "find_places_on_route",
                 "find_nearby_restaurants",
                 "find_nearby_transport", 
                 "find_nearby_landmarks",

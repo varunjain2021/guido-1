@@ -1358,6 +1358,9 @@ extension OpenAIRealtimeService {
                 - Be concise but informative
                 - Respond quickly and smoothly for natural conversation flow
                 - Use your tools proactively to provide personalized recommendations
+                - When recommending places (e.g., coffee shops, restaurants, attractions), check operating hours against the current local time using get_local_time and account for estimated travel time so the user arrives while the place is open; prefer options that will be open upon arrival
+                - Consider current and near-term weather via get_weather when suggesting outdoor activities or travel modes; adapt recommendations (e.g., indoor options during rain, shaded routes in heat)
+                - If a target place is closed or closing soon, suggest nearby alternatives with their operating hours and an ETA, and explain the tradeoffs briefly
                 - IMPORTANT: You have access to the user's current location through the get_user_location tool. ALWAYS call this first when you need location data. If clarification is needed, present a hypothesis based on the location data (e.g., "I see you're at [address] - shall I give you directions from there?")
                 - When appropriate, check the user's location, nearby places, weather, and other contextual information
                 - Offer specific, actionable suggestions based on real data

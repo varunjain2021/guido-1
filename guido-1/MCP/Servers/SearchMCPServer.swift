@@ -4,8 +4,19 @@ public class SearchMCPServer {
     private weak var openAIChatService: OpenAIChatService?
     private weak var locationSearchService: LocationBasedSearchService?
     private let serverInfo = MCPServerInfo(name: "Guido Search Server", version: "1.0.0")
+    private var perplexityApiKey: String?
     
-    init() {}
+    init() {
+        // Load Perplexity key from Config.plist
+        if let path = Bundle.main.path(forResource: "Config", ofType: "plist"),
+           let dict = NSDictionary(contentsOfFile: path) as? [String: Any],
+           let key = dict["Perplexity_API_Key"] as? String, !key.isEmpty {
+            perplexityApiKey = key
+            print("🔑 [SearchMCPServer] Perplexity API key loaded")
+        } else {
+            print("⚠️ [SearchMCPServer] Perplexity API key missing; web_search will fallback")
+        }
+    }
     
     func setOpenAIChatService(_ service: OpenAIChatService) {
         self.openAIChatService = service
@@ -63,20 +74,33 @@ public class SearchMCPServer {
     }
     
     private func executeWebSearch(_ request: MCPCallToolRequest) async -> MCPCallToolResponse {
-        guard let searchService = locationSearchService else {
-            return MCPCallToolResponse(content: [MCPContent(text: "Search service unavailable")], isError: true)
-        }
         guard let query = request.arguments?["query"] as? String else {
             return MCPCallToolResponse(content: [MCPContent(text: "Missing query")], isError: true)
         }
         let location = request.arguments?["location"] as? String
-        let searchQuery = location != nil && !(location!.isEmpty) ? "\(query) in \(location!)" : query
-        let result = await searchService.findNearbyServices(serviceType: "general search", query: searchQuery)
-        if let error = result.error {
-            return MCPCallToolResponse(content: [MCPContent(text: "Web search error: \(error)")], isError: true)
+        let composedQuery = (location != nil && !(location!.isEmpty)) ? "\(query) in \(location!)" : query
+        
+        if let key = perplexityApiKey, !key.isEmpty {
+            do {
+                let text = try await callPerplexity(query: composedQuery, apiKey: key)
+                return MCPCallToolResponse(content: [MCPContent(text: text)], isError: false)
+            } catch {
+                print("⚠️ [SearchMCPServer] Perplexity call failed: \(error). Falling back")
+                // fall through to legacy search fallback
+            }
         }
-        let text = result.summary ?? "No results"
-        return MCPCallToolResponse(content: [MCPContent(text: text)], isError: false)
+        
+        // Fallback to legacy LocationBasedSearchService if available
+        if let searchService = locationSearchService {
+            let result = await searchService.findNearbyServices(serviceType: "general search", query: composedQuery)
+            if let error = result.error {
+                return MCPCallToolResponse(content: [MCPContent(text: "Web search error: \(error)")], isError: true)
+            }
+            let text = result.summary ?? "No results"
+            return MCPCallToolResponse(content: [MCPContent(text: text)], isError: false)
+        } else {
+            return MCPCallToolResponse(content: [MCPContent(text: "Search service unavailable and Perplexity not configured")], isError: true)
+        }
     }
     
     private func executeAIResponse(_ request: MCPCallToolRequest) async -> MCPCallToolResponse {
@@ -94,6 +118,50 @@ public class SearchMCPServer {
         } catch {
             return MCPCallToolResponse(content: [MCPContent(text: "AI error: \(error.localizedDescription)")], isError: true)
         }
+    }
+}
+
+// MARK: - Perplexity Integration
+extension SearchMCPServer {
+    private func callPerplexity(query: String, apiKey: String) async throws -> String {
+        guard let url = URL(string: "https://api.perplexity.ai/chat/completions") else {
+            throw NSError(domain: "SearchMCPServer", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid Perplexity URL"])
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: Any] = [
+            "model": "sonar-pro",
+            "messages": [["role": "user", "content": query]],
+            "temperature": 0.2
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+        guard status == 200 else {
+            let raw = String(data: data, encoding: .utf8) ?? ""
+            throw NSError(domain: "SearchMCPServer", code: status, userInfo: [NSLocalizedDescriptionKey: "Perplexity HTTP \(status): \(raw)"])
+        }
+        
+        // Parse minimally: choices[0].message.content; append citations if present
+        if let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            var output = ""
+            if let choices = root["choices"] as? [[String: Any]],
+               let first = choices.first,
+               let message = first["message"] as? [String: Any],
+               let content = message["content"] as? String {
+                output = content
+            }
+            if let citations = root["citations"] as? [String], !citations.isEmpty {
+                let sources = citations.prefix(8).map { "- \($0)" }.joined(separator: "\n")
+                output += "\n\nSources:\n\(sources)"
+            }
+            return output.isEmpty ? (String(data: data, encoding: .utf8) ?? "") : output
+        }
+        return String(data: data, encoding: .utf8) ?? ""
     }
 }
 

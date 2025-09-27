@@ -73,6 +73,7 @@ class RealtimeToolManager: ObservableObject {
             getLocationTool(),
             getNearbyPlacesTool(),
             getDirectionsTool(),
+            getFindPlacesOnRouteTool(),
             getWeatherTool(),
             getCalendarTool(),
             getLocalTimeTool(),
@@ -147,6 +148,31 @@ class RealtimeToolManager: ObservableObject {
                     )
                 ],
                 required: ["destination", "transportation_mode"]
+            )
+        )
+    }
+    
+    private static func getFindPlacesOnRouteTool() -> RealtimeToolDefinition {
+        return RealtimeToolDefinition(
+            name: "find_places_on_route",
+            description: "Find places along the route to a destination—ideal for on-the-way searches like coffee or gas",
+            parameters: ToolParameters(
+                properties: [
+                    "query": ParameterProperty(
+                        type: "string",
+                        description: "Type of place to find (e.g., 'coffee shop', 'gas station')"
+                    ),
+                    "destination": ParameterProperty(
+                        type: "string",
+                        description: "Destination address or place name"
+                    ),
+                    "max_results": ParameterProperty(
+                        type: "string",
+                        description: "Maximum number of results",
+                        enumValues: ["3", "5", "8", "10"]
+                    )
+                ],
+                required: ["query", "destination"]
             )
         )
     }
@@ -520,6 +546,9 @@ class RealtimeToolManager: ObservableObject {
             
         case "get_directions":
             return await executeDirectionsTool(parameters: parameters)
+        
+        case "find_places_on_route":
+            return await executeFindPlacesOnRoute(parameters: parameters)
             
         case "get_weather":
             return await executeWeatherTool(parameters: parameters)
@@ -637,6 +666,17 @@ class RealtimeToolManager: ObservableObject {
         let directions = "Route to \(destination) via \(transportMode): Estimated time 15 minutes, distance 2.3 km from your current location."
         
         return ToolResult(success: true, data: directions)
+    }
+    
+    private func executeFindPlacesOnRoute(parameters: [String: Any]) async -> ToolResult {
+        guard let query = parameters["query"] as? String,
+              let destination = parameters["destination"] as? String else {
+            return ToolResult(success: false, data: "Missing required parameters: query and destination")
+        }
+        let maxResults = Int(parameters["max_results"] as? String ?? "5") ?? 5
+        // Legacy stub; real implementation exists in LocationMCPServer via MCP. Keep a simple informative fallback.
+        let summary = "Searching for \(query) on the way to \(destination). Showing up to \(maxResults) options."
+        return ToolResult(success: true, data: summary)
     }
     
     private func executeWeatherTool(parameters: [String: Any]) async -> ToolResult {
