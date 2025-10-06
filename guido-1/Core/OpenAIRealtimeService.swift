@@ -820,7 +820,9 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 print("🔍 Looking for streaming AI message to complete. Conversation has \(conversation.count) messages")
                 if let lastStreamingIndex = conversation.lastIndex(where: { $0.role == "assistant" && $0.isStreaming }) {
                     conversation[lastStreamingIndex].isStreaming = false
-                    print("✅ AI transcript completed: '\(conversation[lastStreamingIndex].content)'")
+                    let guarded = NavigationStyleGuard.enforce(conversation[lastStreamingIndex].content)
+                    conversation[lastStreamingIndex].content = guarded.text
+                    print("✅ AI transcript completed (guard applied: \(guarded.violations)): '\(conversation[lastStreamingIndex].content)'")
                 } else {
                     print("⚠️ No streaming AI message found to mark as complete")
                 }
@@ -857,6 +859,9 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             case "response.output_text.done":
                 if let idx = conversation.lastIndex(where: { $0.role == "assistant" && $0.isStreaming }) {
                     conversation[idx].isStreaming = false
+                    let guarded = NavigationStyleGuard.enforce(conversation[idx].content)
+                    conversation[idx].content = guarded.text
+                    print("✅ Output text completed (guard applied: \(guarded.violations))")
                 }
                 
             case "response.done":

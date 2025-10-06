@@ -57,7 +57,9 @@ class OpenAIChatService {
         }
 
         let chatResponse = try JSONDecoder().decode(ChatCompletionResponse.self, from: data)
-        return chatResponse.choices.first?.message.content ?? ""
+        let raw = chatResponse.choices.first?.message.content ?? ""
+        let enforced = NavigationStyleGuard.enforce(raw).text
+        return enforced
     }
     
     // MARK: - Missing Methods for ListeningView
