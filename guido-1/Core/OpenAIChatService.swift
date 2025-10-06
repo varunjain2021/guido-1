@@ -560,6 +560,13 @@ extension OpenAIChatService {
             - Be encouraging and confident about the route
             - Include estimated time and important travel considerations from the data
             - Make the directions feel personal and helpful, not robotic
+
+            DIRECTIONS STYLE (STRICT):
+            - NEVER use compass directions ("north", "south", "east", "west", "northeast", "NW", etc.). If you start to, immediately rephrase.
+            - ALWAYS use left/right instructions anchored to visible cues: intersections, named storefronts (e.g., Starbucks), park entrances, subway entrances, bridges.
+            - Prefer block-level distances and short time estimates over precise feet/meters (say "about two blocks" or "a 2-minute walk").
+            - If orientation is needed, give a quick visual cue (e.g., "Face the river; with the river on your left...") then proceed with left/right steps.
+            - Use clear step-by-step phrasing: "Walk one block to 71st Street and turn right. Keep the Starbucks on your left; the station entrance is just past it on the corner."
             """
         )
         

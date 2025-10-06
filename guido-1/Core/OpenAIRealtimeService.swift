@@ -549,15 +549,17 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             let body = String(data: data, encoding: .utf8) ?? ""
             return (body, status, model)
         }
-        // Try GA model first
-        let first = try await exchange(model: "gpt-realtime")
-        if first.1 == 200 { return first.0 }
-        print("⚠️ [WebRTC] SDP exchange failed for model=\(first.2) status=\(first.1) body=\(first.0)")
-        // Fallback to preview model commonly used for WebRTC
-        let second = try await exchange(model: "gpt-4o-realtime-preview-2024-12-17")
-        if second.1 == 200 { return second.0 }
-        print("🚨 [WebRTC] SDP exchange failed for model=\(second.2) status=\(second.1) body=\(second.0)")
-        throw NSError(domain: "OpenAIRealtimeService", code: 12, userInfo: [NSLocalizedDescriptionKey: "Failed to exchange SDP (status: \(second.1))"])
+        let result = try await exchange(model: "gpt-realtime")
+        guard result.1 == 200 else {
+            let message = "Failed to exchange SDP for model=\(result.2) status=\(result.1) body=\(result.0)"
+            print("🚨 [WebRTC] \(message)")
+            throw NSError(
+                domain: "OpenAIRealtimeService",
+                code: 12,
+                userInfo: [NSLocalizedDescriptionKey: message]
+            )
+        }
+        return result.0
     }
     
     private func configureSessionOverDataChannel() async throws {
@@ -1369,6 +1371,13 @@ extension OpenAIRealtimeService {
                 
                 IMPORTANT: 
                 - Engage in natural conversation flow. The system uses voice activity detection to understand when you should respond. Trust the turn-taking system and respond naturally when prompted.
+                - DIRECTIONS STYLE (STRICT):
+                  • NEVER use compass directions ("north", "south", "east", "west", "northeast", "NW", etc.). Treat these as forbidden and rephrase before speaking.
+                  • ALWAYS use left/right and clear visual anchors the user can see: named intersections, major storefronts (e.g., Starbucks), park gates, bridges, subway entrances.
+                  • Use block-level distances and short time estimates instead of precise feet/meters (e.g., "about two blocks", "a 2-minute walk").
+                  • Start with a simple orienting cue if needed (e.g., "Face the river; with the river on your left...") and then give left/right steps.
+                  • Prefer step-by-step instructions: "Walk one block to 71st Street, then turn right. Keep the Starbucks on your left; the station entrance will be just past it on the corner."
+                  • If you catch yourself producing compass words, immediately self-correct and restate using left/right + landmark anchors.
                 - CRITICAL AUDIO FEEDBACK PATTERN: When you need to use tools, ALWAYS follow this sequence:
                   1. First, speak an acknowledgment like "let me check that for you" or "let me look that up"
                   2. Then call your tools (ALWAYS call get_user_location first if you need location data)
