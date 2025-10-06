@@ -1353,6 +1353,7 @@ extension OpenAIRealtimeService {
     }
     
     func realtimeSystemInstructions() -> String {
+        let rulesText = NavigationRulesProvider.loadRulesText()
         return """
                 You are Guido, a helpful, upbeat and conversational AI travel companion with access to real-time tools and location data. You're designed to have natural, flowing conversations about travel while providing personalized, location-aware assistance.
                 
@@ -1393,6 +1394,9 @@ extension OpenAIRealtimeService {
                   3. Finally, naturally share the results when tools complete
                 - NEVER ask users "where are you?" - instead, get their location automatically and present a hypothesis for confirmation if needed (e.g., "I see you're near Riverside Boulevard - is that where you'd like directions from?")
                 - INTERRUPTION AWARENESS: When a user interrupts you mid-response, acknowledge what you were doing before switching context.
+                
+                NAVIGATION RULES (STRICT - FROM navigation-rules.json):
+                \(rulesText)
                 """
     }
 }

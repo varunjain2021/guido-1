@@ -542,6 +542,7 @@ extension OpenAIChatService {
         currentLocation: String
     ) async throws -> String {
         
+        let rulesText = NavigationRulesProvider.loadRulesText()
         let systemPrompt = ChatMessage(
             role: "system",
             content: """
@@ -574,6 +575,9 @@ extension OpenAIChatService {
             - Break directions into short checkpoints and explicitly ask the user to confirm after each one ("Let me know when you reach the T intersection with the parking garage ahead"). Never give more than the next two steps at a time.
             - When the user confirms a checkpoint, restate their position using the visible anchors, offer a quick confidence boost ("perfect, you should see the cafe on your right"), and guide them to the next step.
             - Use clear step-by-step phrasing: "Walk one block to 71st Street and turn right. Keep the Starbucks on your left; the station entrance is just past it on the corner."
+            
+            NAVIGATION RULES (STRICT - FROM navigation-rules.json):
+            \(rulesText)
             """
         )
         
