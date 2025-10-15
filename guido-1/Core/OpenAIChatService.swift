@@ -539,7 +539,8 @@ extension OpenAIChatService {
         destinationData: [String: Any]?,
         routeData: [String: Any]?,
         transportationMode: String,
-        currentLocation: String
+        currentLocation: String,
+        orientationLandmarks: String = ""
     ) async throws -> String {
         
         let rulesText = NavigationRulesProvider.loadRulesText()
@@ -554,11 +555,18 @@ extension OpenAIChatService {
             - Use EXACT information from the route and destination data provided
             - If route details are unclear, provide general directional guidance
             
+            ORIENTATION-FIRST APPROACH (MANDATORY):
+            - ALWAYS start by orienting the user using visible landmarks from the orientation data provided
+            - Name specific businesses, restaurants, stores, or landmarks the user can see right now
+            - Example: "You're standing near Starbucks and Chase Bank. With the Hudson River to your left..."
+            - NEVER say vague things like "some shops" or "a café" - use actual business names from the data
+            - If no orientation landmarks are provided, ask the user what they see around them first
+            
             Guidelines:
-            - Confirm the traveler’s mode (walking, driving, etc.) and what they see directly ahead before describing the route
-            - Think like a local guide walking beside the user: speak in a warm, calm tone and surface useful local context ("there’s a cozy cafe on the corner if you need a break")
+            - Confirm the traveler's mode (walking, driving, etc.) and what they see directly ahead before describing the route
+            - Think like a local guide walking beside the user: speak in a warm, calm tone and surface useful local context
             - Deliver directions step-by-step instead of dumping the entire route at once
-            - Include helpful landmarks and spatial references when available in the data
+            - Reference specific business/landmark names as waypoints (from orientation or route data)
             - Mention destination details from the provided data (hours, ratings, etc.)
             - Adapt language based on transportation mode (walking vs driving vs transit)
             - Provide practical tips when supported by the data
@@ -567,7 +575,8 @@ extension OpenAIChatService {
             - Make the directions feel personal and helpful, not robotic
 
             DIRECTIONS STYLE (STRICT):
-            - NEVER use compass directions ("north", "south", "east", "west", "northeast", "NW", etc.). If you start to, immediately rephrase.
+            - **FORBIDDEN WORDS: north, south, east, west, northeast, northwest, southeast, southwest, NE, NW, SE, SW, N, S, E, W, eastward, westward, northward, southward**
+            - NEVER EVER use compass directions in ANY form. These are BANNED words. If you catch yourself about to use one, STOP and rephrase using left/right.
             - NEVER use arbitrary measurements like feet, meters, or yards. Keep everything relational to the user's view and short spans like "about a block" or "just past the next light".
             - ALWAYS use left/right instructions anchored to visible cues: intersections, named storefronts (Starbucks, McDonald's, Wells Fargo), park entrances, subway entrances, bridges, notable buildings, transit stops, or natural features near the user.
             - Keep each step grounded in what the user can see within a block or two; call out multiple nearby anchors (stores, restaurants, banks, transit, parks) when available so the user can verify they are on track.
@@ -578,10 +587,25 @@ extension OpenAIChatService {
             
             NAVIGATION RULES (STRICT - FROM navigation-rules.json):
             \(rulesText)
+
+            OBSTACLE AWARENESS (STRICT):
+            - Never instruct the user to face or walk into a wall, fence, railing, or barrier. Orient along sidewalks and public paths-of-travel.
+            - When entering a building is intended, explicitly say to use the doorway/entrance; otherwise keep the building on the user's left/right and continue along the sidewalk.
+            - Prefer crosswalks at corners; avoid suggesting mid-block crossings across multi-lane roads or highways. Call out the crosswalk or corner explicitly.
+            - If the user reports a barrier or mismatch (e.g., a wall directly ahead), re-orient: have them turn so the barrier is on their left/right and proceed along the open path; then confirm visible anchors.
+
+            MAP-VERIFIED OBSTACLE HANDLING (REQUIRED):
+            - Use precise coordinates and map geometry to validate each step. Favor sidewalks, marked paths, and official entrances; avoid routing through building interiors, water, highways, or closed areas.
+            - Before giving the next step, prefer calling tools (get_user_location, get_directions, find_nearby_landmarks/places/transport) to fetch specific named anchors and entrance points.
+            - If the user is against a wall or obstacle, verify with map data (building footprint, sidewalk network, park boundaries), then guide along the open sidewalk to the nearest corner or entrance. Confirm anchors before proceeding.
             """
         )
         
         var directionContext = "From: \(currentLocation)\nTo: \(destination)\nTravel mode: \(transportationMode)\n"
+        
+        if !orientationLandmarks.isEmpty {
+            directionContext += "\nVISIBLE LANDMARKS FOR ORIENTATION (use these actual names to orient the user first):\n\(orientationLandmarks)\n"
+        }
         
         if let destData = destinationData {
             directionContext += "\nDestination details: \(destData)\n"
@@ -596,11 +620,65 @@ extension OpenAIChatService {
             content: """
             \(directionContext)
             
+            IMPORTANT: Start by orienting the user using the specific visible landmarks listed above. Then provide step-by-step directions. Use actual business/landmark names as waypoints, never vague references like "some shops" or "a café".
+            
             Provide intelligent, conversational directions that help the user navigate confidently. Make it feel like helpful guidance from a knowledgeable friend who knows the area well.
             """
         )
         
-        return try await send(message: userPrompt.content, conversation: [systemPrompt])
+        let rawResponse = try await send(message: userPrompt.content, conversation: [systemPrompt])
+        return filterCompassDirections(rawResponse)
+    }
+    
+    /// Post-process filter to remove any compass directions that slip through
+    private func filterCompassDirections(_ text: String) -> String {
+        var filtered = text
+        
+        // Pattern: catch compass words and replace with safer alternatives
+        let compassPatterns: [(pattern: String, replacement: String)] = [
+            // Explicit directional phrases
+            ("(?i)\\b(head|go|walk|turn|continue)\\s+(to the |towards? the )?north\\b", "$1 ahead"),
+            ("(?i)\\b(head|go|walk|turn|continue)\\s+(to the |towards? the )?south\\b", "$1 back"),
+            ("(?i)\\b(head|go|walk|turn|continue)\\s+(to the |towards? the )?east\\b", "$1 to your right"),
+            ("(?i)\\b(head|go|walk|turn|continue)\\s+(to the |towards? the )?west\\b", "$1 to your left"),
+            
+            // Standalone compass words in context
+            ("(?i)\\bto the north\\b", "ahead"),
+            ("(?i)\\bto the south\\b", "behind you"),
+            ("(?i)\\bto the east\\b", "to your right"),
+            ("(?i)\\bto the west\\b", "to your left"),
+            ("(?i)\\bnorth of\\b", "ahead of"),
+            ("(?i)\\bsouth of\\b", "behind"),
+            ("(?i)\\beast of\\b", "to the right of"),
+            ("(?i)\\bwest of\\b", "to the left of"),
+            
+            // Phrases with "should be"
+            ("(?i)\\bshould be (to the |on your |towards? the )?north\\b", "should be ahead"),
+            ("(?i)\\bshould be (to the |on your |towards? the )?south\\b", "should be behind you"),
+            ("(?i)\\bshould be (to the |on your |towards? the )?east\\b", "should be to your right"),
+            ("(?i)\\bshould be (to the |on your |towards? the )?west\\b", "should be to your left"),
+            
+            // "The X will be north/south/east/west"
+            ("(?i)\\bwill be (to the |on the |towards? the )?north\\b", "will be ahead"),
+            ("(?i)\\bwill be (to the |on the |towards? the )?south\\b", "will be behind you"),
+            ("(?i)\\bwill be (to the |on the |towards? the )?east\\b", "will be to your right"),
+            ("(?i)\\bwill be (to the |on the |towards? the )?west\\b", "will be to your left"),
+            
+            // "on your north/south..." edge cases
+            ("(?i)\\bon your north\\b", "ahead of you"),
+            ("(?i)\\bon your south\\b", "behind you"),
+            ("(?i)\\bon your east\\b", "to your right"),
+            ("(?i)\\bon your west\\b", "to your left"),
+        ]
+        
+        for (pattern, replacement) in compassPatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+                let range = NSRange(filtered.startIndex..., in: filtered)
+                filtered = regex.stringByReplacingMatches(in: filtered, options: [], range: range, withTemplate: replacement)
+            }
+        }
+        
+        return filtered
     }
 }
 

@@ -608,6 +608,17 @@ public class LocationMCPServer {
             var destinationData: [String: Any]? = nil
             var routeData: [String: Any]? = nil
             var conflictingData: [String] = []
+            var orientationLandmarks: String = ""
+            
+            // Step 0: Get visible landmarks for initial orientation (50m radius with actual names)
+            if let google = googlePlacesRoutesService {
+                do {
+                    orientationLandmarks = try await google.searchNearby(category: "visible_anchors", radiusMeters: 50)
+                    print("🧭 [LocationMCPServer] Retrieved orientation landmarks: \(orientationLandmarks)")
+                } catch {
+                    print("⚠️ [LocationMCPServer] Could not fetch orientation landmarks: \(error)")
+                }
+            }
             
             // Step 1: Intelligent destination resolution using LLM
             if let google = googlePlacesRoutesService {
@@ -711,13 +722,14 @@ public class LocationMCPServer {
                 )
             }
             
-            // Synthesize intelligent directions response
+            // Synthesize intelligent directions response with orientation landmarks
             let intelligentDirections = try await openAIChatService.synthesizeIntelligentDirections(
                 destination: destination,
                 destinationData: destinationData,
                 routeData: routeData,
                 transportationMode: transportationMode,
-                currentLocation: locationContext
+                currentLocation: locationContext,
+                orientationLandmarks: orientationLandmarks
             )
             
             print("✅ [LocationMCPServer] LLM synthesized intelligent directions to '\(destination)'")

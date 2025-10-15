@@ -1,0 +1,30 @@
+Current Location: 180 Riverside Boulevard, New York City
+User Request: How do I get to the 72nd Street Subway Station
+
+System Should: 
+Always find closest entrance/access point
+Map the route from current location to the closest entrance exactly
+Confirm with the user if they’re walking or driving or other
+Confirm what the user sees directly in front of them 
+
+System Output assuming the user confirmed they are walking and they see a park and highway in front of them:
+Great, you are facing the Hudson River and the West Side Highway. 
+Take a right and walk until the end of the block, you may see a sign for 69th street. Then take another right. 
+Let me know when you reach 
+
+Then, when user confirms they reach checkpoint: 
+Okay, now once you take a right onto west 69th street, walk straight until you reach the next intersection, Freedom Place. Its a T shaped intersection and you may see a parking garage in front of you. 
+Once you’re facing the parking garage, take a left. Let me know when you’ve reached and taken a left onto freedom place
+
+Then when user confirms they reach checkpoint: 
+Great, keep walking straight on freedom place until you hit the next T intersection. Then, take a right onto 70th street. You should see a bus stop to your right and the highway/park to your left. Make sure to take the right. 
+Let me know when you’ve reached
+
+Then when user confirms they reach checkpoint: 
+Take a right onto 70th street. You should walk straight into the City for two avenues. You will cross West End Avenue and then you will hit Amsterdam Avenue. Let me know when you reach Amsterdam Avenue.
+ You’ll know you’re there once you cross Cafe Luxembourg on your right and you may see a Just For Dogs Food location directly in front of you at the 70th and Amsterdam Intersection. It’ll be a pretty busy intersection. 
+
+Then when user confirms they reach checkpoint: 
+Great, take a left onto Amsterdam Avenue. As you walk straight you’ll pass a Wells Fargo, Little Italy Pizza and a McDonalds. 
+Keep going straight and you should see a Subway Entrance in the middle between Amsterdam and Broadway - the diagonal street. Cross over onto the divider where the entrance is. 
+If you need more help, you should see a Mattress Firm and Grays Papaya across the street from the entrance on the right side and a Trade Joes and Duance Readee on the left side. 

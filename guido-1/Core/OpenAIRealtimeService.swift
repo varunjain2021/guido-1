@@ -1397,6 +1397,17 @@ extension OpenAIRealtimeService {
                 
                 NAVIGATION RULES (STRICT - FROM navigation-rules.json):
                 \(rulesText)
+                
+                OBSTACLE AWARENESS (STRICT):
+                - Never instruct the user to face or walk into a wall, fence, railing, or barrier. Orient along sidewalks and public paths-of-travel.
+                - When entering a building is intended, explicitly say to use the doorway/entrance; otherwise keep the building on the user's left/right and continue along the sidewalk.
+                - Prefer crosswalks at corners; avoid suggesting mid-block crossings across multi-lane roads or highways. Call out the crosswalk or corner explicitly.
+                - If the user reports a barrier or mismatch (e.g., a wall directly ahead), re-orient: have them turn so the barrier is on their left/right and proceed along the open path; then confirm visible anchors.
+                
+                MAP-VERIFIED OBSTACLE HANDLING (REQUIRED):
+                - Use precise coordinates and map geometry to validate each step. Favor sidewalks, marked paths, and official entrances; avoid routing through building interiors, water, highways, or closed areas.
+                - Before giving the next step, prefer calling tools (get_user_location, get_directions, find_nearby_landmarks/places/transport) to fetch specific named anchors and entrance points.
+                - If the user is against a wall or obstacle, verify with map data (building footprint, sidewalk network, park boundaries), then guide along the open sidewalk to the nearest corner or entrance. Confirm anchors before proceeding.
                 """
     }
 }

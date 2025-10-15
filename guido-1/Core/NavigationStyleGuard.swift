@@ -25,6 +25,23 @@ struct NavigationStyleGuard {
             }
         }
 
+        // 2b) Obstacle safety rephrase (avoid telling users to face/walk into walls/barriers)
+        let obstaclePattern = "(?i)(face|turn (to|toward)|walk (into|toward)|go (into|toward)) (the )?(wall|fence|railing|barrier)"
+        if let regex = try? NSRegularExpression(pattern: obstaclePattern) {
+            if regex.firstMatch(in: output, range: NSRange(location: 0, length: output.utf16.count)) != nil {
+                violations.append("obstacle")
+                // Soft rewrite: orient along the obstacle and follow sidewalk
+                output = regex.stringByReplacingMatches(
+                    in: output,
+                    options: [],
+                    range: NSRange(location: 0, length: output.utf16.count),
+                    withTemplate: "keep the wall on your left or right and follow the sidewalk"
+                )
+                // Append an explicit safety nudge
+                output += " Use the open sidewalk or marked entrance rather than moving into a barrier."
+            }
+        }
+
         // 3) Limit to at most two actionable steps
         let sentences = splitIntoSentences(output)
         let directiveKeywords = ["turn", "walk", "go", "head", "continue", "cross", "keep", "take", "follow"]
