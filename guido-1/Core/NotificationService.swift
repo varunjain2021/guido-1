@@ -1,28 +1,60 @@
+import Combine
 import Foundation
 import UserNotifications
 import UIKit
 
 @MainActor
-final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
+final class NotificationService: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationService()
+    
+    @Published var authorizationStatus: UNAuthorizationStatus = .notDetermined
     
     private override init() {
         super.init()
         UNUserNotificationCenter.current().delegate = self
+        Task { await refreshAuthorizationStatus() }
     }
     
     func requestAuthorizationIfNeeded() {
-        UNUserNotificationCenter.current().getNotificationSettings { settings in
-            if settings.authorizationStatus == .notDetermined {
-                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-                    if let error {
-                        print("❌ [Notifications] Authorization request error: \(error)")
-                    } else {
-                        print("🔔 [Notifications] Authorization granted: \(granted)")
-                    }
+        Task { _ = await requestAuthorization() }
+    }
+    
+    func requestAuthorization() async -> UNAuthorizationStatus {
+        let currentSettings = await fetchSettings()
+        authorizationStatus = currentSettings.authorizationStatus
+        
+        guard currentSettings.authorizationStatus == .notDetermined else {
+            return currentSettings.authorizationStatus
+        }
+        
+        let granted = await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+                if let error {
+                    print("❌ [Notifications] Authorization request error: \(error)")
+                } else {
+                    print("🔔 [Notifications] Authorization granted: \(granted)")
                 }
+                continuation.resume(returning: granted)
             }
         }
+        
+        if !granted {
+            await refreshAuthorizationStatus()
+            return authorizationStatus
+        }
+        
+        await refreshAuthorizationStatus()
+        return authorizationStatus
+    }
+    
+    func refreshAuthorizationStatus() async {
+        let settings = await fetchSettings()
+        authorizationStatus = settings.authorizationStatus
+    }
+    
+    func openSystemSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url, options: [:], completionHandler: nil)
     }
     
     func sendDirectionsNotification(destination: String, summary: String, mapsURL: URL) {
@@ -61,6 +93,17 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         // Show alert/sound even when app is foregrounded
         completionHandler([.banner, .sound, .list])
+    }
+}
+
+// MARK: - Private Helpers
+private extension NotificationService {
+    func fetchSettings() async -> UNNotificationSettings {
+        await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                continuation.resume(returning: settings)
+            }
+        }
     }
 }
 

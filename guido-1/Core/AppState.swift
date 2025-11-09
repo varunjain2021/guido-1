@@ -8,10 +8,52 @@
 import Foundation
 import SwiftUI
 
+enum OnboardingMode: Equatable {
+    case firstRun
+    case help
+}
+
+@MainActor
+final class OnboardingController: ObservableObject {
+    @Published var isVisible = false
+    @Published var mode: OnboardingMode = .firstRun
+    
+    private let userDefaults: UserDefaults
+    
+    init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
+    }
+    
+    func storageKey(for userId: String) -> String {
+        "onboarding.completed.\(userId)"
+    }
+    
+    func needsOnboarding(for userId: String) -> Bool {
+        !userDefaults.bool(forKey: storageKey(for: userId))
+    }
+    
+    func setCompleted(for userId: String) {
+        userDefaults.set(true, forKey: storageKey(for: userId))
+    }
+    
+    func presentOnboarding(mode: OnboardingMode) {
+        self.mode = mode
+        isVisible = true
+    }
+    
+    func dismissOnboarding(currentUserId: String?) {
+        if mode == .firstRun, let userId = currentUserId {
+            setCompleted(for: userId)
+        }
+        isVisible = false
+    }
+}
+
 @MainActor
 class AppState: ObservableObject {
     @Published var showRealtimeConversation = false
     @Published var authStatus: AuthStatus = AuthStatus(isAuthenticated: false, user: nil)
+    @Published var onboarding = OnboardingController()
     
     // UI Theme (Canvas)
     @Published var selectedTheme: CanvasEnvironment = .water
@@ -127,5 +169,9 @@ class AppState: ObservableObject {
             // Ignore for now
         }
         self.authStatus = await authService.currentStatus()
+    }
+    
+    var currentUserId: String? {
+        authStatus.user?.id
     }
 } 

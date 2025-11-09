@@ -29,6 +29,7 @@ class LocationManager: NSObject, ObservableObject {
     private let geocoder = CLGeocoder()
     private var locationHistory: [LocationReading] = []
     private var movementTimer: Timer?
+    private var authorizationContinuation: CheckedContinuation<CLAuthorizationStatus, Never>?
     // Feature flag to disable MapKit nearby search
     private let nearbyPlacesEnabled: Bool = false
     
@@ -85,6 +86,18 @@ class LocationManager: NSObject, ObservableObject {
     
     func requestLocationPermission() {
         locationManager.requestWhenInUseAuthorization()
+    }
+    
+    func requestAuthorization() async -> CLAuthorizationStatus {
+        let status = authorizationStatus
+        if status == .notDetermined {
+            return await withCheckedContinuation { continuation in
+                authorizationContinuation = continuation
+                locationManager.requestWhenInUseAuthorization()
+            }
+        } else {
+            return status
+        }
     }
     
     func startLocationUpdates() {
@@ -415,6 +428,10 @@ extension LocationManager: CLLocationManagerDelegate {
         Task { @MainActor in
             authorizationStatus = status
             updateAuthorizationState()
+            if let continuation = authorizationContinuation {
+                continuation.resume(returning: status)
+                authorizationContinuation = nil
+            }
         }
     }
     

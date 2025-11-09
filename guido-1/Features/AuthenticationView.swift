@@ -1,0 +1,216 @@
+//
+//  AuthenticationView.swift
+//  guido-1
+//
+
+import SwiftUI
+
+struct AuthenticationView: View {
+    @EnvironmentObject var appState: AppState
+    @State private var email: String = ""
+    @State private var password: String = ""
+    @State private var firstName: String = ""
+    @State private var lastName: String = ""
+    @State private var isRegistering: Bool = false
+    @State private var isBusy: Bool = false
+    @State private var errorMessage: String?
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                VStack(spacing: 20) {
+                    headerCard
+                    googleButton
+                    emailPasswordCard
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: geometry.size.height)
+                .padding(.horizontal, 0)
+                .overlay(
+                    VStack { Spacer() }.opacity(0)
+                )
+            }
+        }
+    }
+    
+    private var headerCard: some View {
+        LiquidGlassCard(intensity: 0.85, cornerRadius: 28, shadowIntensity: 0.35, enableFloating: true) {
+            VStack(spacing: 8) {
+                Text("Guido")
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .foregroundColor(Color(.secondaryLabel))
+                Text("Always by your side")
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundColor(Color(.tertiaryLabel))
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 18)
+        }
+        .frame(maxWidth: 520)
+        .padding(.horizontal, 24)
+    }
+    
+    private var googleButton: some View {
+        LiquidGlassCard(intensity: 0.7, cornerRadius: 20, shadowIntensity: 0.25) {
+            Button(action: { Task { await signInWithGoogle() } }) {
+                HStack(spacing: 12) {
+                    Image(systemName: "g.circle.fill")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundColor(Color(.secondaryLabel))
+                    Text("Continue with Google")
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .foregroundColor(Color(.secondaryLabel))
+                    Spacer()
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 14)
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
+        .frame(maxWidth: 520)
+        .padding(.horizontal, 24)
+    }
+    
+    private var emailPasswordCard: some View {
+        LiquidGlassCard(intensity: 0.7, cornerRadius: 20, shadowIntensity: 0.25) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    SegmentedToggle(isRegistering: $isRegistering)
+                }
+                .padding(.bottom, 4)
+                
+                if isRegistering {
+                    nameFields
+                }
+                
+                emailField
+                passwordField
+                
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(.red)
+                }
+                
+                submitButton
+            }
+            .padding(16)
+        }
+        .frame(maxWidth: 520)
+        .padding(.horizontal, 24)
+    }
+    
+    private var nameFields: some View {
+        HStack(spacing: 8) {
+            TextField("First name", text: $firstName)
+                .textContentType(.givenName)
+                .padding(12)
+                .foregroundColor(Color(.secondaryLabel))
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
+            TextField("Last name", text: $lastName)
+                .textContentType(.familyName)
+                .padding(12)
+                .foregroundColor(Color(.secondaryLabel))
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
+        }
+    }
+    
+    private var emailField: some View {
+        TextField("Email", text: $email)
+            .textContentType(.emailAddress)
+            .keyboardType(.emailAddress)
+            .autocapitalization(.none)
+            .disableAutocorrection(true)
+            .padding(12)
+            .foregroundColor(Color(.secondaryLabel))
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
+    }
+    
+    private var passwordField: some View {
+        SecureField("Password", text: $password)
+            .textContentType(.password)
+            .padding(12)
+            .foregroundColor(Color(.secondaryLabel))
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
+    }
+    
+    private var submitButton: some View {
+        Button(action: { Task { await submitEmailPassword() } }) {
+            HStack {
+                if isBusy {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: Color(.tertiaryLabel)))
+                }
+                Text(isRegistering ? "Create account" : "Sign in")
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                Spacer()
+                Image(systemName: "arrow.right")
+            }
+            .foregroundColor(Color(.secondaryLabel))
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+        }
+        .disabled(isBusy || email.isEmpty || password.count < 6 || (isRegistering && (firstName.isEmpty || lastName.isEmpty)))
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    private func signInWithGoogle() async {
+        isBusy = true
+        errorMessage = nil
+        let result = await appState.signInWithGoogle()
+        isBusy = false
+        if case .failure(let error) = result {
+            errorMessage = error.localizedDescription
+        }
+    }
+    
+    private func submitEmailPassword() async {
+        isBusy = true
+        errorMessage = nil
+        let result: Result<Void, Error>
+        if isRegistering {
+            result = await appState.signUp(email: email, password: password)
+            if case .success = result {
+                _ = await appState.updateProfile(firstName: firstName, lastName: lastName)
+            }
+        } else {
+            result = await appState.signIn(email: email, password: password)
+        }
+        isBusy = false
+        if case .failure(let error) = result {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct SegmentedToggle: View {
+    @Binding var isRegistering: Bool
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            segment(title: "Sign in", active: !isRegistering) {
+                withAnimation(.easeInOut(duration: 0.2)) { isRegistering = false }
+            }
+            segment(title: "Create account", active: isRegistering) {
+                withAnimation(.easeInOut(duration: 0.2)) { isRegistering = true }
+            }
+        }
+    }
+    
+    private func segment(title: String, active: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundColor(active ? .white : .primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(active ? Color.blue : Color.clear)
+                )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+
