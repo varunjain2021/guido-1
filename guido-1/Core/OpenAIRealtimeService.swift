@@ -1221,7 +1221,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             }
             
             // Send tool response back to OpenAI
-            await sendToolResponse(callId: callId, result: result)
+            await sendToolResponse(callId: callId, toolName: name, result: result)
             
         } catch {
             print("❌ [TOOL] Failed to handle function call: \(error)")
@@ -1239,13 +1239,28 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         }
     }
     
-    private func sendToolResponse(callId: String, result: ToolResult) async {
+    private func sendToolResponse(callId: String, toolName: String, result: ToolResult) async {
+        let processedData: Any
+
+        if result.success && toolName == "get_directions" {
+            processedData = await enrichDirectionsPayload(result.data)
+        } else {
+            processedData = result.data
+        }
+
         let outputString: String
-        
+
         if result.success {
-            if let data = result.data as? String {
+            if toolName == "get_directions", let data = processedData as? [String: Any] {
+                let voiceMessage = data["voice_message"] as? String ?? "I just sent you directions. Please open the Google Maps link I provided."
+                let mapsURL = data["maps_url"] as? String ?? ""
+                outputString = """
+VOICE_MESSAGE: \(voiceMessage)
+ACTION: Ask the user to open the Google Maps link we just shared (\(mapsURL)). Do not provide step-by-step navigation.
+"""
+            } else if let data = processedData as? String {
                 outputString = data
-            } else if let data = result.data as? [String: Any] {
+            } else if let data = processedData as? [String: Any] {
                 // Prefer JSON for machine-readability by the model
                 if let json = try? JSONSerialization.data(withJSONObject: data),
                    let text = String(data: json, encoding: .utf8) {
@@ -1254,7 +1269,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                     outputString = String(describing: data)
                 }
             } else {
-                outputString = String(describing: result.data)
+                outputString = String(describing: processedData)
             }
         } else {
             outputString = "Error: \(result.data)"
@@ -1285,6 +1300,98 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         }
         
         return formatted.joined(separator: ", ")
+    }
+
+    private func enrichDirectionsPayload(_ data: Any) async -> Any {
+        if var dict = data as? [String: Any] {
+            return await addVoiceMessage(to: dict)
+        } else if let text = data as? String,
+                  let jsonData = text.data(using: .utf8),
+                  var dict = (try? JSONSerialization.jsonObject(with: jsonData)) as? [String: Any] {
+            let enriched = await addVoiceMessage(to: dict)
+            if let enrichedData = try? JSONSerialization.data(withJSONObject: enriched),
+               let enrichedText = String(data: enrichedData, encoding: .utf8) {
+                return enrichedText
+            }
+            return enriched
+        }
+        return data
+    }
+
+    private func addVoiceMessage(to payload: [String: Any]) async -> [String: Any] {
+        var enrichedPayload = payload
+
+        let destination = (payload["destination"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let modeRaw = (payload["transportation_mode"] as? String ?? "").lowercased()
+        let friendlyMode: String
+        switch modeRaw {
+        case "walking": friendlyMode = "walking"
+        case "transit": friendlyMode = "transit"
+        case "cycling", "bicycling": friendlyMode = "cycling"
+        case "driving": friendlyMode = "driving"
+        default: friendlyMode = modeRaw.isEmpty ? "travel" : modeRaw
+        }
+
+        let etaMinutes = payload["eta_minutes"] as? Int ?? 0
+        let etaText: String
+        if etaMinutes > 0 {
+            etaText = "It's about \(etaMinutes) minute\(etaMinutes == 1 ? "" : "s") by \(friendlyMode)."
+        } else {
+            etaText = "It's by \(friendlyMode)."
+        }
+
+        let routeSteps = payload["route_steps"] as? [String] ?? []
+        let destinationVoice = await makeVoiceFriendlyDestination(
+            fullAddress: destination ?? "",
+            mode: friendlyMode,
+            steps: routeSteps
+        )
+        let destinationText = destinationVoice.isEmpty
+            ? "Use those instructions to get to your destination."
+            : "Use those instructions to head to \(destinationVoice)."
+
+        let voiceMessage = "I just sent you directions so you can take a closer look. \(etaText) I can find places on the way, but \(destinationText)"
+
+        enrichedPayload["voice_message"] = voiceMessage
+        enrichedPayload["voice_message_type"] = "directions_handoff"
+        enrichedPayload["assistant_guidance"] = "Respond with the voice_message verbatim. Do not provide turn-by-turn navigation. Remind the user to open the Google Maps link."
+
+        print("[Directions] 🔊 Voice handoff prepared: \(voiceMessage)")
+
+        return enrichedPayload
+    }
+
+    private func makeVoiceFriendlyDestination(fullAddress: String, mode: String, steps: [String]) async -> String {
+        // If we have recent steps, try to form cross streets using LLM; otherwise simplify address
+        let prompt = """
+Convert this destination into a brief, voice-friendly phrase using cross streets when possible. Expand abbreviations naturally (e.g., Blvd -> Boulevard, Ave -> Avenue). Avoid full long addresses.
+
+Destination: \(fullAddress)
+Recent route steps (if any): \(steps.joined(separator: " | "))
+Mode: \(mode)
+
+Rules:
+- Prefer “<Street A> and <Street B>” or “near <Landmark> at <Street>”.
+- If cross streets are unclear, use a short form like “<Street Name> near <Closest Street>” or just “<Street Name>”.
+- Avoid repeating city/state/ZIP.
+- Return only the short phrase.
+"""
+        let chat = OpenAIChatService(apiKey: self.apiKey)
+        do {
+            let response = try await chat.generateStructuredData(prompt: prompt)
+            let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Strip code fences if present
+            let cleaned = trimmed.replacingOccurrences(of: "```", with: "")
+            // Heuristic: keep short
+            return String(cleaned.prefix(120))
+        } catch {
+            print("⚠️ [Directions] Voice-friendly destination generation failed: \(error)")
+            // Fallback: strip city/state if present by comma split; keep first two parts
+            let parts = fullAddress.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            if parts.isEmpty { return "" }
+            if parts.count >= 2 { return "\(parts[0]), \(parts[1])" }
+            return parts[0]
+        }
     }
     
     func truncateConversation() async {
@@ -1379,15 +1486,10 @@ extension OpenAIRealtimeService {
                 IMPORTANT: 
                 - Engage in natural conversation flow. The system uses voice activity detection to understand when you should respond. Trust the turn-taking system and respond naturally when prompted.
                 - DIRECTIONS STYLE (STRICT):
-                  • NEVER use compass directions ("north", "south", "east", "west", "northeast", "NW", etc.). Treat these as forbidden and rephrase before speaking.
-                  • NEVER use arbitrary measurements like feet, meters, or yards. Keep everything relational to what the user can see and short spans like "about a block" or "just past the next light".
-                  • ALWAYS use left/right and clear visual anchors the user can see: named intersections, major storefronts (Starbucks, McDonald's, Wells Fargo), park gates, bridges, subway entrances, transit stops, or natural features.
-                  • Keep each step grounded in what the user can see within a block or two; reference multiple nearby anchors (stores, restaurants, banks, transit, parks) whenever possible so the user can confirm they’re on track.
-                  • Start with a simple orienting cue if needed (e.g., "Face the river; with the river on your left...") and then give left/right steps.
-                  • Break directions into short checkpoints and explicitly ask the user to confirm after each one ("Let me know when you reach the T intersection with the parking garage ahead"). Never give more than the next two steps at a time.
-                  • When the user confirms a checkpoint, restate their position using the visible anchors, offer a quick confidence boost ("perfect, you should see the cafe on your right"), and guide them to the next step.
-                  • Prefer step-by-step instructions: "Walk one block to 71st Street, then turn right. Keep the Starbucks on your left; the station entrance will be just past it on the corner."
-                  • If you catch yourself producing compass words, immediately self-correct and restate using left/right + landmark anchors.
+                  • Do NOT provide turn-by-turn or step-by-step directions in conversation.
+                  • When directions are requested, provide a brief handoff line and ETA/mode (if available), then direct the user to open the Google Maps link we provide in the UI.
+                  • Offer to find places on the way if asked. Otherwise, keep the response short and defer navigation to the Google Maps link.
+                  • Avoid compass directions and arbitrary measurements; keep language concise and friendly.
                 - CRITICAL AUDIO FEEDBACK PATTERN: When you need to use tools, ALWAYS follow this sequence:
                   1. First, speak an acknowledgment like "let me check that for you" or "let me look that up"
                   2. Then call your tools (ALWAYS call get_user_location first if you need location data)

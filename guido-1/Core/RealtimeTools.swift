@@ -134,7 +134,7 @@ class RealtimeToolManager: ObservableObject {
     private static func getDirectionsTool() -> RealtimeToolDefinition {
         return RealtimeToolDefinition(
             name: "get_directions",
-            description: "Get turn-by-turn directions to a destination with estimated travel time",
+            description: "Get a directions summary and a Google Maps link with estimated travel time",
             parameters: ToolParameters(
                 properties: [
                     "destination": ParameterProperty(
@@ -661,11 +661,30 @@ class RealtimeToolManager: ObservableObject {
               let transportMode = parameters["transportation_mode"] as? String else {
             return ToolResult(success: false, data: "Missing required parameters")
         }
-        
-        // Simulate directions (in real implementation, use Maps API)
-        let directions = "Route to \(destination) via \(transportMode): Estimated time 15 minutes, distance 2.3 km from your current location."
-        
-        return ToolResult(success: true, data: directions)
+
+        let urlMode = normalizeTransportModeForURL(transportMode)
+
+        guard let encodedDestination = destination.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            return ToolResult(success: false, data: "Unable to encode destination for directions URL")
+        }
+
+        let webURLString = "https://www.google.com/maps/dir/?api=1&destination=\(encodedDestination)&travelmode=\(urlMode)"
+        let appURLString = "comgooglemaps://?daddr=\(encodedDestination)&directionsmode=\(urlMode)"
+        let summary = "Route to \(destination) via \(transportMode). Open Google Maps to see turn-by-turn instructions."
+
+        var payload: [String: Any] = [
+            "title": "Directions",
+            "summary": summary,
+            "destination": destination,
+            "transportation_mode": transportMode,
+            "maps_url": webURLString
+        ]
+
+        payload["maps_app_url"] = appURLString
+
+        print("[Directions] ℹ️ Legacy directions payload generated for '\(destination)' (mode: \(transportMode))")
+
+        return ToolResult(success: true, data: payload)
     }
     
     private func executeFindPlacesOnRoute(parameters: [String: Any]) async -> ToolResult {
@@ -731,6 +750,15 @@ class RealtimeToolManager: ObservableObject {
         let transport = "Available \(transportType) options\(destText): Uber (3 min), Lyft (5 min), Public bus (Route 12, 8 min walk to stop)"
         
         return ToolResult(success: true, data: transport)
+    }
+
+    private func normalizeTransportModeForURL(_ mode: String) -> String {
+        switch mode.lowercased() {
+        case "walking": return "walking"
+        case "transit": return "transit"
+        case "cycling", "bicycling": return "bicycling"
+        default: return "driving"
+        }
     }
     
     private func executeLocalEventsTool(parameters: [String: Any]) async -> ToolResult {

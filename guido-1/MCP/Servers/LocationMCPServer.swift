@@ -21,6 +21,16 @@ public class LocationMCPServer {
     private weak var googlePlacesRoutesService: GooglePlacesRoutesService?
     private let serverInfo = MCPServerInfo(name: "Guido Location Server", version: "1.0.0")
     
+    // Track last navigation destination to enable "on the way" confirmations
+    struct DestinationContext {
+        let name: String
+        let address: String
+        let latitude: Double
+        let longitude: Double
+        let timestamp: Date
+    }
+    private var lastDestination: DestinationContext?
+
     // MARK: - Initialization
     
     init(locationManager: LocationManager? = nil) {
@@ -137,7 +147,7 @@ public class LocationMCPServer {
     private func getDirectionsTool() -> MCPTool {
         return MCPTool(
             name: "get_directions",
-            description: "Get turn-by-turn directions to a destination with estimated travel time",
+            description: "Get a directions summary and Google Maps link with estimated travel time",
             inputSchema: MCPToolInputSchema(
                 properties: [
                     "destination": MCPPropertySchema(
@@ -606,20 +616,9 @@ public class LocationMCPServer {
             
             // Gather data for intelligent directions
             var destinationData: [String: Any]? = nil
-            var routeData: [String: Any]? = nil
+            var routeSummary: GooglePlacesRoutesService.RouteSummary? = nil
+            var mapsURLs: (web: URL, app: URL?)? = nil
             var conflictingData: [String] = []
-            var orientationLandmarks: String = ""
-            
-            // Step 0: Get visible landmarks for initial orientation (50m radius with actual names)
-            if let google = googlePlacesRoutesService {
-                do {
-                    orientationLandmarks = try await google.searchNearby(category: "visible_anchors", radiusMeters: 50)
-                    print("🧭 [LocationMCPServer] Retrieved orientation landmarks: \(orientationLandmarks)")
-                } catch {
-                    print("⚠️ [LocationMCPServer] Could not fetch orientation landmarks: \(error)")
-                }
-            }
-            
             // Step 1: Intelligent destination resolution using LLM
             if let google = googlePlacesRoutesService {
                 do {
@@ -667,24 +666,23 @@ public class LocationMCPServer {
                         
                         // Step 2: Get route information
                         do {
-                            let routeSummary = try await google.computeRoute(to: resolvedPlace.formattedAddress, mode: transportationMode)
-                            routeData = [
-                                "route_summary": routeSummary,
-                                "transportation_mode": transportationMode,
-                                "destination_resolved": true
-                            ]
+                            let summary = try await google.computeRoute(to: resolvedPlace.formattedAddress, mode: transportationMode)
+                            routeSummary = summary
+                            
+                            mapsURLs = await MainActor.run {
+                                google.buildDirectionsURLs(to: resolvedPlace.formattedAddress, mode: transportationMode)
+                            }
                         } catch {
                             conflictingData.append("Route calculation failed: \(error.localizedDescription)")
                         }
                     } else {
                         // Try with original destination string
                         do {
-                            let routeSummary = try await google.computeRoute(to: destination, mode: transportationMode)
-                            routeData = [
-                                "route_summary": routeSummary,
-                                "transportation_mode": transportationMode,
-                                "destination_resolved": false
-                            ]
+                            let summary = try await google.computeRoute(to: destination, mode: transportationMode)
+                            routeSummary = summary
+                            mapsURLs = await MainActor.run {
+                                google.buildDirectionsURLs(to: destination, mode: transportationMode)
+                            }
                         } catch {
                             conflictingData.append("Could not find or route to destination: \(destination)")
                         }
@@ -694,47 +692,94 @@ public class LocationMCPServer {
                 }
             }
             
-            // Step 3: Use LLM to synthesize intelligent directions
-            guard let openAIChatService = openAIChatService else {
-                // Fallback without LLM
-                if let route = routeData?["route_summary"] as? String {
-                    return MCPCallToolResponse(content: [MCPContent(text: route)], isError: false)
-                } else {
-                    return MCPCallToolResponse(
-                        content: [MCPContent(text: "Could not generate directions to \(destination)")],
-                        isError: true
-                    )
+            if !conflictingData.isEmpty && routeSummary == nil {
+                let message = conflictingData.joined(separator: "\n")
+                print("[Directions] ⚠️ Conflicting data prevented directions: \(message)")
+                return MCPCallToolResponse(
+                    content: [MCPContent(text: "Could not generate directions to \(destination). \(message)")],
+                    isError: true
+                )
+            }
+            
+            guard let summary = routeSummary else {
+                return MCPCallToolResponse(
+                    content: [MCPContent(text: "Could not generate directions to \(destination)")],
+                    isError: true
+                )
+            }
+            
+            guard let google = googlePlacesRoutesService else {
+                return MCPCallToolResponse(
+                    content: [MCPContent(text: "Google Routes service unavailable")],
+                    isError: true
+                )
+            }
+            
+            if mapsURLs == nil {
+                mapsURLs = await MainActor.run {
+                    google.buildDirectionsURLs(to: summary.destination, mode: transportationMode)
                 }
             }
             
-            // Handle conflicting data intelligently
-            if !conflictingData.isEmpty && routeData == nil {
-                let uncertaintyResponse = try await openAIChatService.handleLocationUncertainty(
-                    userQuery: "Directions to \(destination) via \(transportationMode)",
-                    conflictingData: conflictingData,
-                    locationContext: locationContext,
-                    suggestedAlternatives: ["Try a more specific address", "Check the place name spelling"]
-                )
-                
+            // Persist the resolved destination context for future "on the way" queries
+            if let dest = destinationData,
+               let name = dest["name"] as? String,
+               let address = dest["address"] as? String {
+                // Try to resolve coordinates via a quick text search (best-effort)
+                do {
+                    let candidates = try await google.searchText(query: name, maxResults: 1)
+                    if let first = candidates.first {
+                        lastDestination = DestinationContext(
+                            name: first.name,
+                            address: first.formattedAddress,
+                            latitude: first.latitude,
+                            longitude: first.longitude,
+                            timestamp: Date()
+                        )
+                        print("📌 [LocationMCPServer] Saved last destination context: \(first.name)")
+                    }
+                } catch {
+                    // Ignore coordinate persistence failure
+                }
+            }
+            
+            guard let webURL = mapsURLs?.web else {
+                print("[Directions] ❌ Failed to produce Google Maps URL for destination '\(summary.destination)'")
                 return MCPCallToolResponse(
-                    content: [MCPContent(text: uncertaintyResponse)],
-                    isError: false
+                    content: [MCPContent(text: "Could not generate a Google Maps link for \(summary.destination)")],
+                    isError: true
                 )
             }
             
-            // Synthesize intelligent directions response with orientation landmarks
-            let intelligentDirections = try await openAIChatService.synthesizeIntelligentDirections(
-                destination: destination,
-                destinationData: destinationData,
-                routeData: routeData,
-                transportationMode: transportationMode,
-                currentLocation: locationContext,
-                orientationLandmarks: orientationLandmarks
-            )
+            let durationMinutes = max(1, Int(round(Double(summary.durationSeconds) / 60.0)))
+            let displayDestination = (destinationData?["name"] as? String) ?? summary.destination
+            var responsePayload: [String: Any] = [
+                "title": "Directions",
+                "summary": summary.summaryText,
+                "destination": displayDestination,
+                "transportation_mode": summary.travelMode,
+                "eta_minutes": durationMinutes,
+                "distance_meters": summary.distanceMeters,
+                "maps_url": webURL.absoluteString
+            ]
+            if !summary.stepInstructions.isEmpty {
+                responsePayload["route_steps"] = summary.stepInstructions
+            }
             
-            print("✅ [LocationMCPServer] LLM synthesized intelligent directions to '\(destination)'")
+            if let appURL = mapsURLs?.app {
+                responsePayload["maps_app_url"] = appURL.absoluteString
+            }
+            
+            if let resolvedAddress = destinationData?["address"] as? String {
+                responsePayload["destination_address"] = resolvedAddress
+            }
+            
+            let payloadData = try JSONSerialization.data(withJSONObject: responsePayload)
+            let payloadText = String(data: payloadData, encoding: .utf8) ?? "{}"
+            
+            print("[Directions] ✅ Generated handoff payload: \(payloadText)")
             return MCPCallToolResponse(
-                content: [MCPContent(text: intelligentDirections)],
+                content: [MCPContent(text: payloadText)],
                 isError: false
             )
             
@@ -767,6 +812,10 @@ public class LocationMCPServer {
         let arguments = request.arguments ?? [:]
         let cuisineType = arguments["cuisine_type"] as? String ?? ""
         let query = arguments["query"] as? String ?? ""
+        
+        if let clarification = await onTheWayClarificationIfNeeded(searchLabel: "restaurants") {
+            return MCPCallToolResponse(content: [MCPContent(text: clarification)], isError: false)
+        }
         
         // Build intelligent search query
         let searchQuery = !query.isEmpty ? "\(query) restaurant" : 
@@ -814,6 +863,9 @@ public class LocationMCPServer {
     
     private func executeFindNearbyTransport(_ request: MCPCallToolRequest) async -> MCPCallToolResponse {
         do {
+            if let clarification = await onTheWayClarificationIfNeeded(searchLabel: "transport options") {
+                return MCPCallToolResponse(content: [MCPContent(text: clarification)], isError: false)
+            }
             guard let arguments = request.arguments else {
                 throw LocationMCPError.invalidParameters("Missing arguments")
             }
@@ -927,6 +979,9 @@ public class LocationMCPServer {
     
     private func executeFindNearbyLandmarks(_ request: MCPCallToolRequest) async -> MCPCallToolResponse {
         do {
+            if let clarification = await onTheWayClarificationIfNeeded(searchLabel: "landmarks or places") {
+                return MCPCallToolResponse(content: [MCPContent(text: clarification)], isError: false)
+            }
             guard let locationSearchService = locationSearchService else {
                 print("⚠️ [LocationMCPServer] No LocationBasedSearchService available, using mock data")
                 let arguments = request.arguments ?? [:]
@@ -976,9 +1031,52 @@ public class LocationMCPServer {
             )
         }
     }
+
+    // MARK: - On-the-way Clarification
+    private func haversineDistanceMeters(fromLat: Double, fromLon: Double, toLat: Double, toLon: Double) -> Int {
+        let earthRadius = 6371000.0
+        let dLat = (toLat - fromLat) * .pi / 180.0
+        let dLon = (toLon - fromLon) * .pi / 180.0
+        let a = sin(dLat/2) * sin(dLat/2) +
+                cos(fromLat * .pi / 180.0) * cos(toLat * .pi / 180.0) *
+                sin(dLon/2) * sin(dLon/2)
+        let c = 2 * atan2(sqrt(a), sqrt(1 - a))
+        return Int(earthRadius * c)
+    }
+
+    private func onTheWayClarificationIfNeeded(searchLabel: String) async -> String? {
+        guard let lastDestination else { return nil }
+        let currentLocation = await MainActor.run { locationManager?.currentLocation }
+        guard let current = currentLocation else { return nil }
+        
+        let meters = haversineDistanceMeters(
+            fromLat: current.coordinate.latitude, fromLon: current.coordinate.longitude,
+            toLat: lastDestination.latitude, toLon: lastDestination.longitude
+        )
+        let distanceText: String = {
+            if meters < 1000 {
+                return "\(meters) m"
+            } else {
+                let km = Double(meters) / 1000.0
+                return String(format: "%.1f km", km)
+            }
+        }()
+        
+        let question = """
+You recently asked for directions to "\(lastDestination.name)". You're about \(distanceText) from that destination now.
+Do you want \(searchLabel) on the way to that destination or near the destination?
+If on the way, how far off-route is acceptable (e.g., 2–5 minutes)?
+If near the destination, how far from it is okay (e.g., within 300 m)?
+"""
+        print("❓ [LocationMCPServer] On-the-way clarification for \(searchLabel) — last destination: \(lastDestination.name)")
+        return question
+    }
     
     private func executeFindNearbyServices(_ request: MCPCallToolRequest) async -> MCPCallToolResponse {
         do {
+            if let clarification = await onTheWayClarificationIfNeeded(searchLabel: "services") {
+                return MCPCallToolResponse(content: [MCPContent(text: clarification)], isError: false)
+            }
             guard let arguments = request.arguments else {
                 throw LocationMCPError.invalidParameters("Missing arguments")
             }

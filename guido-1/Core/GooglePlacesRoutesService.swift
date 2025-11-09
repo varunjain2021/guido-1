@@ -33,6 +33,15 @@ class GooglePlacesRoutesService: ObservableObject {
             return businessStatus != nil || rating != nil || phoneNumber != nil
         }
     }
+
+    public struct RouteSummary {
+        let destination: String
+        let travelMode: String
+        let distanceMeters: Int
+        let durationSeconds: Int
+        let summaryText: String
+        let stepInstructions: [String]
+    }
     private let apiKey: String
     private let locationManager: LocationManager
     private let session: URLSession = .shared
@@ -40,6 +49,36 @@ class GooglePlacesRoutesService: ObservableObject {
     init(apiKey: String, locationManager: LocationManager) {
         self.apiKey = apiKey
         self.locationManager = locationManager
+    }
+
+    // MARK: - URL Builders
+
+    func buildDirectionsURLs(to destinationAddress: String, mode: String) -> (web: URL, app: URL?)? {
+        guard let encodedDest = destinationAddress.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            print("[Directions] ❌ Failed to percent-encode destination: \(destinationAddress)")
+            return nil
+        }
+
+        let travelModeQuery = mapModeForURL(mode)
+        let webURLString = "https://www.google.com/maps/dir/?api=1&destination=\(encodedDest)&travelmode=\(travelModeQuery)"
+        let appURLString = "comgooglemaps://?daddr=\(encodedDest)&directionsmode=\(travelModeQuery)"
+
+        guard let webURL = URL(string: webURLString) else {
+            print("[Directions] ❌ Failed to build web directions URL from: \(webURLString)")
+            return nil
+        }
+
+        let appURL = URL(string: appURLString)
+
+        print("[Directions] ✅ Built Google Maps URLs for destination='\(destinationAddress)' mode='\(travelModeQuery)'")
+        print("[Directions] 🌐 Web URL: \(webURL.absoluteString)")
+        if let appURL {
+            print("[Directions] 📱 App URL: \(appURL.absoluteString)")
+        } else {
+            print("[Directions] ⚠️ App URL could not be created")
+        }
+
+        return (web: webURL, app: appURL)
     }
     
     // MARK: - Places (Nearby by category)
@@ -178,7 +217,7 @@ class GooglePlacesRoutesService: ObservableObject {
     
     // MARK: - Directions via Routes API
     
-    func computeRoute(to destinationAddress: String, mode: String) async throws -> String {
+    func computeRoute(to destinationAddress: String, mode: String) async throws -> RouteSummary {
         guard let originLocation = locationManager.currentLocation else {
             throw NSError(domain: "GooglePlacesRoutesService", code: 4, userInfo: [NSLocalizedDescriptionKey: "Location not available"])
         }
@@ -217,7 +256,7 @@ class GooglePlacesRoutesService: ObservableObject {
             throw NSError(domain: "GooglePlacesRoutesService", code: 6, userInfo: [NSLocalizedDescriptionKey: "Invalid Routes response"])
         }
         
-        return summarizeRoute(json: json, mode: mode, destination: destinationAddress)
+        return try summarizeRoute(json: json, mode: mode, destination: destinationAddress)
     }
     
     // MARK: - Helpers
@@ -243,6 +282,16 @@ class GooglePlacesRoutesService: ObservableObject {
         case "transit": return "TRANSIT"
         case "cycling": return "BICYCLE"
         default: return "DRIVE"
+        }
+    }
+
+    private func mapModeForURL(_ mode: String) -> String {
+        switch mode {
+        case "walking": return "walking"
+        case "driving": return "driving"
+        case "transit": return "transit"
+        case "cycling": return "bicycling"
+        default: return "driving"
         }
     }
     
@@ -281,26 +330,31 @@ class GooglePlacesRoutesService: ObservableObject {
         return "Found \(places.count) \(category) nearby:\n" + lines.joined(separator: "\n")
     }
     
-    private func summarizeRoute(json: [String: Any], mode: String, destination: String) -> String {
+    private func summarizeRoute(json: [String: Any], mode: String, destination: String) throws -> RouteSummary {
         guard let routes = json["routes"] as? [[String: Any]], let first = routes.first else {
-            return "No route found to \(destination)"
+            throw NSError(domain: "GooglePlacesRoutesService", code: 7, userInfo: [NSLocalizedDescriptionKey: "No route found to \(destination)"])
         }
         let distance = first["distanceMeters"] as? Int ?? 0
         let durationISO = first["duration"] as? String ?? ""
         let distanceText = formatDistance(meters: distance)
+        let durationSeconds = parseDurationSeconds(iso8601Seconds: durationISO)
         let durationText = formatDuration(iso8601Seconds: durationISO)
-        var stepsText = ""
+        let summaryText = "Route to \(destination) via \(mode): \(distanceText), \(durationText)"
+        var stepInstructions: [String] = []
         if let legs = first["legs"] as? [[String: Any]], let leg = legs.first, let steps = leg["steps"] as? [[String: Any]] {
-            let stepLines: [String] = steps.prefix(6).enumerated().compactMap { idx, step in
-                let instr = (step["navigationInstruction"] as? [String: Any])?["instructions"] as? String ?? ""
-                let stepMeters = step["distanceMeters"] as? Int ?? 0
-                return "\(idx+1). \(instr) (\(formatDistance(meters: stepMeters)))"
-            }
-            if !stepLines.isEmpty {
-                stepsText = "\nSteps:\n" + stepLines.joined(separator: "\n")
+            stepInstructions = steps.compactMap { step in
+                (step["navigationInstruction"] as? [String: Any])?["instructions"] as? String
             }
         }
-        return "Route to \(destination) via \(mode): \(distanceText), \(durationText)" + stepsText
+        let tail = Array(stepInstructions.suffix(3))
+        return RouteSummary(
+            destination: destination,
+            travelMode: mode,
+            distanceMeters: distance,
+            durationSeconds: durationSeconds,
+            summaryText: summaryText,
+            stepInstructions: tail
+        )
     }
 
     private func formatDistance(meters: Int) -> String {
@@ -318,6 +372,10 @@ class GooglePlacesRoutesService: ObservableObject {
             return "~\(minutes) min"
         }
         return iso8601Seconds
+    }
+
+    private func parseDurationSeconds(iso8601Seconds: String) -> Int {
+        return Int(iso8601Seconds.replacingOccurrences(of: "s", with: "")) ?? 0
     }
     
     private func computeDistanceMeters(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D) -> Int {
