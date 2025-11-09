@@ -68,16 +68,6 @@ struct SettingsView: View {
                                                 RoundedRectangle(cornerRadius: 10)
                                                     .stroke(isSelected ? Color.blue.opacity(0.6) : Color.clear, lineWidth: 2)
                                             )
-                                            
-                                            if isSelected {
-                                                Image(systemName: "checkmark.circle.fill")
-                                                    .font(.system(size: 12, weight: .bold))
-                                                    .foregroundColor(.blue)
-                                                    .background(
-                                                        Circle().fill(Color(.systemBackground)).frame(width: 14, height: 14)
-                                                    )
-                                                    .offset(x: 6, y: -6)
-                                            }
                                         }
                                     }
                                     .buttonStyle(PlainButtonStyle())
