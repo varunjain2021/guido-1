@@ -126,3 +126,5 @@ Config.plist
 guido-1/Config.plist
 *.keys
 .env
+# Xcode/SwiftPM build artifacts
+.DerivedDataClean/
