@@ -14,8 +14,10 @@ class GooglePlacesRoutesService: ObservableObject {
         public let rating: Double?
         public let userRatingCount: Int?
         public let phoneNumber: String?
+        public let resourceName: String?          // Google Places resource name (e.g., "places/ChIJ...")
+        public let googleMapsUri: String?         // Shareable Google Maps URL
         
-        public init(name: String, formattedAddress: String, latitude: Double, longitude: Double, distanceMeters: Int, isOpen: Bool? = nil, businessStatus: String? = nil, rating: Double? = nil, userRatingCount: Int? = nil, phoneNumber: String? = nil) {
+        public init(name: String, formattedAddress: String, latitude: Double, longitude: Double, distanceMeters: Int, isOpen: Bool? = nil, businessStatus: String? = nil, rating: Double? = nil, userRatingCount: Int? = nil, phoneNumber: String? = nil, resourceName: String? = nil, googleMapsUri: String? = nil) {
             self.name = name
             self.formattedAddress = formattedAddress
             self.latitude = latitude
@@ -26,6 +28,8 @@ class GooglePlacesRoutesService: ObservableObject {
             self.rating = rating
             self.userRatingCount = userRatingCount
             self.phoneNumber = phoneNumber
+            self.resourceName = resourceName
+            self.googleMapsUri = googleMapsUri
         }
         
         // Helper to determine if this is a reliable business for LLM decision making
@@ -136,7 +140,7 @@ class GooglePlacesRoutesService: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
-        request.setValue("places.displayName,places.formattedAddress,places.location,places.currentOpeningHours.openNow,places.businessStatus,places.rating,places.userRatingCount,places.nationalPhoneNumber,places.internationalPhoneNumber", forHTTPHeaderField: "X-Goog-FieldMask")
+        request.setValue("places.name,places.googleMapsUri,places.displayName,places.formattedAddress,places.location,places.currentOpeningHours.openNow,places.businessStatus,places.rating,places.userRatingCount,places.nationalPhoneNumber,places.internationalPhoneNumber", forHTTPHeaderField: "X-Goog-FieldMask")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         let body: [String: Any] = [
@@ -178,6 +182,8 @@ class GooglePlacesRoutesService: ObservableObject {
                 print("⚠️ [GooglePlacesService] Skipping place with invalid location data")
                 return nil 
             }
+            let resourceName = place["name"] as? String
+            let gmapsUri = place["googleMapsUri"] as? String
             let nameText = ((place["displayName"] as? [String: Any])?["text"] as? String) ?? "Unknown"
             let addr = (place["formattedAddress"] as? String) ?? ""
             let dist = computeDistanceMeters(from: origin.coordinate, to: CLLocationCoordinate2D(latitude: lat, longitude: lng))
@@ -202,7 +208,9 @@ class GooglePlacesRoutesService: ObservableObject {
                 businessStatus: businessStatus,
                 rating: rating,
                 userRatingCount: userRatingCount,
-                phoneNumber: phoneNumber
+                phoneNumber: phoneNumber,
+                resourceName: resourceName,
+                googleMapsUri: gmapsUri
             )
         }
         print("✅ [GooglePlacesService] Returning \(candidates.count) valid candidates")

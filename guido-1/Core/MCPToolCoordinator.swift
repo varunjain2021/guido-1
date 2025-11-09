@@ -41,6 +41,11 @@ public class MCPToolCoordinator: ObservableObject {
     private var travelMCPServer: TravelMCPServer?
     private var searchMCPServer: SearchMCPServer?
     private var safetyMCPServer: SafetyMCPServer?
+    private var webSearchBridgeServer: WebSearchBridgeServer?
+    private var reviewsServer: ReviewsServer?
+    private var photosVibeServer: PhotosVibeServer?
+    private var webContentServer: WebContentServer?
+    private var menuOfferingsServer: MenuOfferingsServer?
     
     // MARK: - Initialization
     
@@ -64,6 +69,14 @@ public class MCPToolCoordinator: ObservableObject {
         travelMCPServer = TravelMCPServer(locationManager: manager)
         safetyMCPServer = SafetyMCPServer(locationManager: manager)
         searchMCPServer = SearchMCPServer()
+        webSearchBridgeServer = WebSearchBridgeServer(searchServer: searchMCPServer)
+        reviewsServer = ReviewsServer()
+        photosVibeServer = PhotosVibeServer()
+        webContentServer = WebContentServer()
+        menuOfferingsServer = MenuOfferingsServer()
+        if let webContentServer {
+            menuOfferingsServer?.setWebContentServer(webContentServer)
+        }
         
         // Set services if they're available
         if let searchService = locationSearchService {
@@ -73,6 +86,8 @@ public class MCPToolCoordinator: ObservableObject {
             locationMCPServer?.setOpenAIChatService(chatService)
             travelMCPServer?.setOpenAIChatService(chatService)
             searchMCPServer?.setOpenAIChatService(chatService)
+            reviewsServer?.setOpenAIChatService(chatService)
+            menuOfferingsServer?.setOpenAIChatService(chatService)
         }
         
         // Register servers with MCP client based on feature flags
@@ -87,6 +102,21 @@ public class MCPToolCoordinator: ObservableObject {
         }
         if featureFlags.shouldUseMCPForTool("get_safety_info") {
             registerSafetyMCPServer()
+        }
+        if featureFlags.shouldUseMCPForTool("search_web") || featureFlags.shouldUseMCPForTool("search_candidates_for_facet") {
+            registerWebSearchBridgeServer()
+        }
+        if featureFlags.shouldUseMCPForTool("reviews_list") || featureFlags.shouldUseMCPForTool("reviews_aspects_summarize") {
+            registerReviewsServer()
+        }
+        if featureFlags.shouldUseMCPForTool("photos_list") || featureFlags.shouldUseMCPForTool("vibe_analyze") {
+            registerPhotosVibeServer()
+        }
+        if featureFlags.shouldUseMCPForTool("web_links_discover") || featureFlags.shouldUseMCPForTool("web_readable_extract") || featureFlags.shouldUseMCPForTool("pdf_extract") {
+            registerWebContentServer()
+        }
+        if featureFlags.shouldUseMCPForTool("menu_parse") || featureFlags.shouldUseMCPForTool("catalog_classify") {
+            registerMenuOfferingsServer()
         }
     }
     
@@ -105,12 +135,27 @@ public class MCPToolCoordinator: ObservableObject {
         
         // Update LocationMCPServer if it exists
         locationMCPServer?.setOpenAIChatService(service)
+        travelMCPServer?.setOpenAIChatService(service)
+        searchMCPServer?.setOpenAIChatService(service)
+        reviewsServer?.setOpenAIChatService(service)
+        menuOfferingsServer?.setOpenAIChatService(service)
+        // Bridge server relies on search server for execution, ensure linkage stays up to date
+        if let searchMCPServer {
+            webSearchBridgeServer?.setSearchServer(searchMCPServer)
+        }
     }
     
     func setGooglePlacesRoutesService(_ service: GooglePlacesRoutesService) {
         self.googlePlacesRoutesService = service
         // Update LocationMCPServer if it exists
         locationMCPServer?.setGooglePlacesRoutesService(service)
+    }
+    
+    // MARK: - Accessors
+    
+    /// Expose GooglePlacesRoutesService for read-only access (used by discovery wiring).
+    func getGooglePlacesRoutesService() -> GooglePlacesRoutesService? {
+        return googlePlacesRoutesService
     }
     
     func setTravelServices(weather: WeatherService, currency: CurrencyService, translation: TranslationService, travelRequirements: TravelRequirementsService) {
@@ -307,6 +352,111 @@ public class MCPToolCoordinator: ObservableObject {
             }
         }
         print("✅ [MCPToolCoordinator] Registered \(tools.count) safety tools with MCP client")
+    }
+    
+    private func registerWebSearchBridgeServer() {
+        guard let webSearchBridgeServer = webSearchBridgeServer else {
+            print("❌ [MCPToolCoordinator] WebSearchBridgeServer not initialized")
+            return
+        }
+        let tools = webSearchBridgeServer.listTools()
+        for tool in tools {
+            if mcpClient.hasToolAvailable(tool.name) { continue }
+            mcpClient.registerTool(tool) { [weak self, weak webSearchBridgeServer] request in
+                guard let _ = self, let server = webSearchBridgeServer else {
+                    throw MCPClientError.internalError("Server or coordinator deallocated")
+                }
+                print("🌐 [MCPToolCoordinator] Routing '\(request.name)' to WebSearchBridgeServer")
+                return await server.callTool(request)
+            }
+        }
+        if !tools.isEmpty {
+            print("✅ [MCPToolCoordinator] Registered \(tools.count) discovery search tools with MCP client")
+        }
+    }
+    
+    private func registerReviewsServer() {
+        guard let reviewsServer = reviewsServer else {
+            print("❌ [MCPToolCoordinator] ReviewsServer not initialized")
+            return
+        }
+        let tools = reviewsServer.listTools()
+        for tool in tools {
+            if mcpClient.hasToolAvailable(tool.name) { continue }
+            mcpClient.registerTool(tool) { [weak self, weak reviewsServer] request in
+                guard let _ = self, let server = reviewsServer else {
+                    throw MCPClientError.internalError("Server or coordinator deallocated")
+                }
+                print("📝 [MCPToolCoordinator] Routing '\(request.name)' to ReviewsServer")
+                return await server.callTool(request)
+            }
+        }
+        if !tools.isEmpty {
+            print("✅ [MCPToolCoordinator] Registered \(tools.count) reviews tools with MCP client")
+        }
+    }
+    
+    private func registerPhotosVibeServer() {
+        guard let photosVibeServer = photosVibeServer else {
+            print("❌ [MCPToolCoordinator] PhotosVibeServer not initialized")
+            return
+        }
+        let tools = photosVibeServer.listTools()
+        for tool in tools {
+            if mcpClient.hasToolAvailable(tool.name) { continue }
+            mcpClient.registerTool(tool) { [weak self, weak photosVibeServer] request in
+                guard let _ = self, let server = photosVibeServer else {
+                    throw MCPClientError.internalError("Server or coordinator deallocated")
+                }
+                print("📸 [MCPToolCoordinator] Routing '\(request.name)' to PhotosVibeServer")
+                return await server.callTool(request)
+            }
+        }
+        if !tools.isEmpty {
+            print("✅ [MCPToolCoordinator] Registered \(tools.count) vibe tools with MCP client")
+        }
+    }
+    
+    private func registerWebContentServer() {
+        guard let webContentServer = webContentServer else {
+            print("❌ [MCPToolCoordinator] WebContentServer not initialized")
+            return
+        }
+        let tools = webContentServer.listTools()
+        for tool in tools {
+            if mcpClient.hasToolAvailable(tool.name) { continue }
+            mcpClient.registerTool(tool) { [weak self, weak webContentServer] request in
+                guard let _ = self, let server = webContentServer else {
+                    throw MCPClientError.internalError("Server or coordinator deallocated")
+                }
+                print("🕸️ [MCPToolCoordinator] Routing '\(request.name)' to WebContentServer")
+                return await server.callTool(request)
+            }
+        }
+        if !tools.isEmpty {
+            print("✅ [MCPToolCoordinator] Registered \(tools.count) web content tools with MCP client")
+        }
+    }
+    
+    private func registerMenuOfferingsServer() {
+        guard let menuOfferingsServer = menuOfferingsServer else {
+            print("❌ [MCPToolCoordinator] MenuOfferingsServer not initialized")
+            return
+        }
+        let tools = menuOfferingsServer.listTools()
+        for tool in tools {
+            if mcpClient.hasToolAvailable(tool.name) { continue }
+            mcpClient.registerTool(tool) { [weak self, weak menuOfferingsServer] request in
+                guard let _ = self, let server = menuOfferingsServer else {
+                    throw MCPClientError.internalError("Server or coordinator deallocated")
+                }
+                print("🍽️ [MCPToolCoordinator] Routing '\(request.name)' to MenuOfferingsServer")
+                return await server.callTool(request)
+            }
+        }
+        if !tools.isEmpty {
+            print("✅ [MCPToolCoordinator] Registered \(tools.count) menu/catalog tools with MCP client")
+        }
     }
     
     private func setupMCPClient() {

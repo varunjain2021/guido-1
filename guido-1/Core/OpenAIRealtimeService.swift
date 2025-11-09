@@ -273,6 +273,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     private var currentResponseId: String?
     private var pendingToolCalls: Set<String> = []
     private var lastToolStartTime: TimeInterval = 0
+    private var openAIChatService: OpenAIChatService?
+    private var discoveryEngine: DiscoveryEngine?
     
     enum ConversationState {
         case idle
@@ -372,6 +374,52 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         print("🔇 Streaming control - already handled by connection state")
     }
     
+    // MARK: - Discovery Wiring
+    private func maybeRunDiscovery(for question: String) async {
+        guard let discoveryEngine = self.discoveryEngine else {
+            print("🧭 [Discovery] DiscoveryEngine unavailable")
+            return
+        }
+        // Resolve a place candidate using Google text search (best-effort)
+        var ctx: DiscoveryPlaceContext?
+        if let placesService = self.toolManager.getGooglePlacesRoutesService() {
+            do {
+                let candidates = try await placesService.searchText(query: question, maxResults: 1)
+                if let top = candidates.first {
+                    let placeId = top.resourceName ?? ""
+                    ctx = DiscoveryPlaceContext(placeId: placeId, placeName: top.name, website: nil)
+                    print("🧭 [Discovery] Context resolved → name='\(top.name)' id='\(placeId)' addr='\(top.formattedAddress)'")
+                } else {
+                    print("🧭 [Discovery] No place candidates found for question")
+                }
+            } catch {
+                print("❌ [Discovery] Place resolution failed: \(error.localizedDescription)")
+            }
+        } else {
+            print("⚠️ [Discovery] GooglePlacesRoutesService unavailable; skipping place resolution")
+        }
+        
+        guard let context = ctx, !context.placeId.isEmpty else {
+            print("🧭 [Discovery] Missing placeId; skipping discovery for this turn")
+            return
+        }
+        
+        do {
+            print("🧭 [Discovery] Routing question to orchestrator…")
+            let result = try await discoveryEngine.answer(question: question, context: context)
+            print("🧭 [Discovery] Facet='\(result.facet)', confidence=\(String(format: "%.2f", result.confidence ?? 0))")
+            print("🔗 [Discovery] Citations: \(result.citations.map { $0.url?.absoluteString ?? $0.title }.joined(separator: " | "))")
+            
+            // Surface a concise assistant message into the conversation (UI can also render rich card)
+            let summary = result.answer
+            let assistant = RealtimeMessage(role: "assistant", content: summary, timestamp: Date())
+            conversation.append(assistant)
+            print("🧭 [Discovery] Appended discovery answer to conversation")
+        } catch {
+            print("❌ [Discovery] DiscoveryEngine failed: \(error.localizedDescription)")
+        }
+    }
+    
     /// Clear conversation history
     func clearConversation() {
         conversation.removeAll()
@@ -390,6 +438,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         // Initialize OpenAI Chat service
         let openAIChatService = OpenAIChatService(apiKey: self.apiKey)
         toolManager.setOpenAIChatService(openAIChatService)
+        self.openAIChatService = openAIChatService
+        self.discoveryEngine = DiscoveryEngine(toolCoordinator: toolManager, openAI: openAIChatService)
         
         // Initialize Google Places/Routes service if key available in Config.plist
         if let configPath = Bundle.main.path(forResource: "Config", ofType: "plist"),
@@ -789,6 +839,12 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                     let message = RealtimeMessage(role: "user", content: transcript, timestamp: Date())
                     conversation.append(message)
                     print("👤 [TRANSCRIPT] User said: '\(transcript)' - added to conversation (total: \(conversation.count))")
+                    
+                    // Opportunistic Discovery wiring: let the orchestrator decide tools.
+                    // We do NOT hardcode facets; we hand the full question to DiscoveryEngine.
+                    Task { [weak self] in
+                        await self?.maybeRunDiscovery(for: trimmedTranscript)
+                    }
                 } else {
                     print("⚠️ [TRANSCRIPT] Failed to decode transcription completed event")
                     if let jsonString = String(data: eventData, encoding: .utf8) {
@@ -1511,6 +1567,10 @@ extension OpenAIRealtimeService {
                 - Before giving the next step, prefer calling tools (get_user_location, get_directions, find_nearby_landmarks/places/transport) to fetch specific named anchors and entrance points.
                 - If the user is against a wall or obstacle, verify with map data (building footprint, sidewalk network, park boundaries), then guide along the open sidewalk to the nearest corner or entrance. Confirm anchors before proceeding.
                 """
+    }
+    
+    func discoveryOrchestratorInstructions() -> String {
+        DiscoveryPromptProvider.loadPrompt()
     }
 }
 

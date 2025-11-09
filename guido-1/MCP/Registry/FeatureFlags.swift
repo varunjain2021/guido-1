@@ -17,6 +17,7 @@ public enum ToolCategory: String, CaseIterable {
     case safety = "safety"
     case calendar = "calendar"
     case transport = "transport"
+    case discovery = "discovery"
     
     public var displayName: String {
         switch self {
@@ -26,6 +27,7 @@ public enum ToolCategory: String, CaseIterable {
         case .safety: return "Safety"
         case .calendar: return "Calendar"
         case .transport: return "Transport"
+        case .discovery: return "Discovery"
         }
     }
     
@@ -52,6 +54,21 @@ public enum ToolCategory: String, CaseIterable {
             return ["check_calendar", "get_local_time"]
         case .transport:
             return ["find_transportation", "find_local_events"]
+        case .discovery:
+            return [
+                "search_web",
+                "search_candidates_for_facet",
+                "reviews_list",
+                "reviews_aspects_summarize",
+                "photos_list",
+                "vibe_analyze",
+                "web_links_discover",
+                "web_readable_extract",
+                "pdf_extract",
+                "web_images_discover",
+                "menu_parse",
+                "catalog_classify"
+            ]
         }
     }
 }
