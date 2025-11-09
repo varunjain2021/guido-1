@@ -48,31 +48,6 @@ struct SettingsView: View {
                                 .font(.system(size: 14, weight: .semibold, design: .rounded))
                                 .foregroundColor(Color(.tertiaryLabel))
                             
-                            // Current selection pill
-                            HStack(spacing: 8) {
-                                Text("Current:")
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundColor(Color(.tertiaryLabel))
-                                HStack(spacing: 6) {
-                                    Text(appState.selectedTheme.displayName)
-                                        .font(.system(size: 16, weight: .medium, design: .rounded))
-                                    Text(themeName(appState.selectedTheme))
-                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(
-                                    Capsule()
-                                        .fill(Color.blue.opacity(0.12))
-                                )
-                                .overlay(
-                                    Capsule()
-                                        .stroke(Color.blue.opacity(0.35), lineWidth: 1)
-                                )
-                                .foregroundColor(.blue)
-                            }
-                            .padding(.bottom, 2)
-                            
                             // Theme options (formerly triple-tap test UI)
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 8)], spacing: 8) {
                                 ForEach(Array(CanvasEnvironment.allCases.enumerated()), id: \.offset) { _, env in
@@ -84,18 +59,10 @@ struct SettingsView: View {
                                         let isSelected = appState.selectedTheme == env
                                         ZStack(alignment: .topTrailing) {
                                             LiquidGlassCard(intensity: isSelected ? 0.6 : 0.4, cornerRadius: 10, shadowIntensity: isSelected ? 0.2 : 0.08) {
-                                                VStack(spacing: 2) {
-                                                    Text(env.displayName)
-                                                        .font(.system(size: 18, weight: .medium, design: .rounded))
-                                                        .foregroundColor(isSelected ? .blue : Color(.secondaryLabel))
-                                                        .frame(width: 44, height: 26)
-                                                    if isSelected {
-                                                        Text("Selected")
-                                                            .font(.system(size: 8, weight: .semibold, design: .rounded))
-                                                            .foregroundColor(.blue)
-                                                    }
-                                                }
-                                                .padding(.vertical, 4)
+                                                Text(env.displayName)
+                                                    .font(.system(size: 18, weight: .medium, design: .rounded))
+                                                    .foregroundColor(isSelected ? .blue : Color(.secondaryLabel))
+                                                    .frame(width: 44, height: 36)
                                             }
                                             .overlay(
                                                 RoundedRectangle(cornerRadius: 10)
