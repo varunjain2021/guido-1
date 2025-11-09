@@ -749,6 +749,13 @@ struct AdaptiveCanvas: View {
         .onAppear {
             setupCanvas()
             startAnimations()
+            // If a test theme is provided, apply it immediately (override dynamic environment)
+            if let testEnv = testEnvironment {
+                withAnimation(.easeInOut(duration: 1.0)) {
+                    currentEnvironment = testEnv
+                    updateCanvasColors()
+                }
+            }
         }
         .onDisappear {
             stopAnimations()
