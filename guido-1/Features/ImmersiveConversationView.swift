@@ -30,9 +30,7 @@ struct ImmersiveConversationView: View {
     @State private var audioLevel: Float = 0.0
     @State private var showSettings = false
     
-    // Testing mode
-    @State private var testingMode = false
-    @State private var currentTestEnvironment: CanvasEnvironment = .unknown
+    // Theme is now managed via Settings (AppState.selectedTheme)
     
     private let openAIAPIKey: String
     
@@ -50,20 +48,11 @@ struct ImmersiveConversationView: View {
                 guidoSpeaking: guidoSpeaking,
                 conversationState: mapConversationState(realtimeService.conversationState),
                 audioLevel: audioLevel,
-                testEnvironment: testingMode ? currentTestEnvironment : nil
+                testEnvironment: appState.selectedTheme
             )
             .ignoresSafeArea()
             
-            // Testing mode overlay (subtle, top-right)
-            if testingMode {
-                VStack {
-                    HStack {
-                        Spacer()
-                        testingModeControls
-                    }
-                    Spacer()
-                }
-            }
+            // Removed test overlay; theme selection is in Settings
             
             // Connection controls in center when not connected (only after auth)
             if appState.authStatus.isAuthenticated && !realtimeService.isConnected && !showSettings {
@@ -187,12 +176,7 @@ struct ImmersiveConversationView: View {
         .onAppear {
             setupView()
         }
-        .onTapGesture(count: 3) {
-            // Triple tap anywhere to toggle testing mode
-            withAnimation(.easeInOut(duration: 0.3)) {
-                testingMode.toggle()
-            }
-        }
+        // Removed triple-tap testing toggle
     }
     
     // MARK: - Centered Liquid Glass Button
@@ -688,40 +672,7 @@ struct ImmersiveConversationView: View {
         }
     }
     
-    // MARK: - Testing Mode Controls
-    
-    private var testingModeControls: some View {
-        VStack(spacing: 8) {
-            LiquidGlassCard(intensity: 0.5, cornerRadius: 8, shadowIntensity: 0.1) {
-                Text("TEST")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundColor(.orange)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-            }
-            
-            VStack(spacing: 4) {
-                ForEach(Array(CanvasEnvironment.allCases.enumerated()), id: \.offset) { index, environment in
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.8)) {
-                            currentTestEnvironment = environment
-                        }
-                    }) {
-                        LiquidGlassCard(intensity: 0.4, cornerRadius: 6, shadowIntensity: 0.05) {
-                            Text(environment.displayName)
-                                .font(.system(size: 8, weight: .medium, design: .rounded))
-                                .foregroundColor(currentTestEnvironment == environment ? .orange : .secondary)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                        }
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                }
-            }
-        }
-        .padding(.trailing, 16)
-        .padding(.top, 60)
-    }
+    // Testing controls removed
 }
 
 // MARK: - Preview

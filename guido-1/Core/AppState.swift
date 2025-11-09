@@ -13,6 +13,9 @@ class AppState: ObservableObject {
     @Published var showRealtimeConversation = false
     @Published var authStatus: AuthStatus = AuthStatus(isAuthenticated: false, user: nil)
     
+    // UI Theme (Canvas)
+    @Published var selectedTheme: CanvasEnvironment = .water
+    
     // API Keys - Loaded from Config.plist for security
     let openAIAPIKey: String
     let elevenLabsAPIKey: String

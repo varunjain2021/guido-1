@@ -41,6 +41,36 @@ struct SettingsView: View {
                             Spacer()
                         }
                         Divider().opacity(0.3)
+                        
+                        // Themes
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Themes")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(.tertiaryLabel))
+                            
+                            // Theme options (formerly triple-tap test UI)
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 8)], spacing: 8) {
+                                ForEach(Array(CanvasEnvironment.allCases.enumerated()), id: \.offset) { _, env in
+                                    Button(action: {
+                                        withAnimation(.easeInOut(duration: 0.25)) {
+                                            appState.selectedTheme = env
+                                        }
+                                    }) {
+                                        let isSelected = appState.selectedTheme == env
+                                        LiquidGlassCard(intensity: isSelected ? 0.6 : 0.4, cornerRadius: 10, shadowIntensity: isSelected ? 0.2 : 0.08) {
+                                            Text(env.displayName)
+                                                .font(.system(size: 18, weight: .medium, design: .rounded))
+                                                .foregroundColor(isSelected ? .blue : Color(.secondaryLabel))
+                                                .frame(width: 44, height: 36)
+                                        }
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                    .accessibilityLabel("Select theme \(env.displayName)")
+                                }
+                            }
+                        }
+                        
+                        Divider().opacity(0.3)
                         Button(action: { Task { await appState.signOut() } }) {
                             HStack {
                                 Text("Log out")
