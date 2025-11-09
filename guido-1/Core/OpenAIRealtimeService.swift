@@ -321,8 +321,18 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     
     // Session gating
     private var isSessionReady = false
+    private var isDataChannelReady = false
     private var didSendInitialGreeting = false
     private var awaitingGreetingCompletion = false
+    private var hasQueuedInitialGreeting = false
+    
+    private struct PendingDataChannelMessage {
+        let payload: Data
+        let description: String
+        let onSend: (() -> Void)?
+    }
+    
+    private var pendingDataChannelMessages: [PendingDataChannelMessage] = []
     
     // Preferred conversation language (ISO-639-1), defaults to English
     private(set) var preferredLanguageCode: String = "en"
@@ -483,8 +493,11 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         print("🔌 [CONNECT] Connecting to OpenAI Realtime API...")
         // Reset session gating state
         isSessionReady = false
+        isDataChannelReady = false
         awaitingGreetingCompletion = false
         didSendInitialGreeting = false
+        hasQueuedInitialGreeting = false
+        pendingDataChannelMessages.removeAll()
         #if !targetEnvironment(simulator)
         localAudioTrack?.isEnabled = false
         #endif
@@ -554,8 +567,11 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         print("✅ Disconnected from OpenAI Realtime API")
         
         isSessionReady = false
+        isDataChannelReady = false
         awaitingGreetingCompletion = false
         didSendInitialGreeting = false
+        hasQueuedInitialGreeting = false
+        pendingDataChannelMessages.removeAll()
     }
     
     // MARK: - Private Methods (WebRTC only)
@@ -682,13 +698,9 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             "event_id": eventId,
             "session": sessionDict
         ]
-        guard let json = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        if let dc = dataChannel, dc.readyState == .open {
-            let buffer = RTCDataBuffer(data: json, isBinary: false)
-            dc.sendData(buffer)
-            print("🔧 [WebRTC] Sent session.update over data channel")
-        } else {
-            print("⚠️ [WebRTC] Data channel not open; session.update not sent")
+        let sentImmediately = sendOrQueueDataChannelPayload(payload, description: "session.update (initial)")
+        if !sentImmediately {
+            print("⏳ [WebRTC] session.update queued until data channel is ready")
         }
     }
     
@@ -705,13 +717,9 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             "event_id": eventId,
             "session": sessionDict
         ]
-        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        if let dc = dataChannel, dc.readyState == .open {
-            let buffer = RTCDataBuffer(data: data, isBinary: false)
-            dc.sendData(buffer)
+        let sentImmediately = sendOrQueueDataChannelPayload(payload, description: "language update to \(preferredLanguageCode.uppercased())")
+        if sentImmediately {
             print("🔧 [WebRTC] Updated transcription language → \(preferredLanguageCode)")
-        } else {
-            print("⚠️ [WebRTC] Data channel not open; language update deferred")
         }
     }
     
@@ -720,23 +728,22 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             "type": "input_audio_buffer.clear",
             "event_id": UUID().uuidString
         ]
-        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        if let dc = dataChannel, dc.readyState == .open {
-            let buffer = RTCDataBuffer(data: data, isBinary: false)
-            dc.sendData(buffer)
-            print("🧹 [WebRTC] Cleared input audio buffer before enabling microphone")
-        } else {
-            print("⚠️ [WebRTC] Data channel not open; unable to clear input buffer")
+        let sentImmediately = sendOrQueueDataChannelPayload(payload, description: "input_audio_buffer.clear") { [weak self] in
+            self?.lastClearBufferTime = Date().timeIntervalSince1970
+        }
+        if sentImmediately {
+            lastClearBufferTime = Date().timeIntervalSince1970
         }
     }
     
     private func sendInitialGreetingInPreferredLanguage() async {
         guard !didSendInitialGreeting else { return }
+        if hasQueuedInitialGreeting { return }
         
         let langCode = preferredLanguageCode.lowercased()
         let languageName = languageDisplayName(for: langCode)
         let instructions = """
-        Speak one short, friendly sentence in \(languageName) (language code: \(langCode.uppercased())) introducing yourself as Guido and letting the user know you're ready to help.
+        Speak one short, friendly sentence strictly in \(languageName) (language code: \(langCode.uppercased())) introducing yourself as Guido and letting the user know you're ready to help. Do not switch languages or change tone based on any captured audio.
         """
         let payload: [String: Any] = [
             "type": "response.create",
@@ -747,23 +754,19 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             ]
         ]
         
-        guard let data = try? JSONSerialization.data(withJSONObject: payload),
-              let dc = dataChannel,
-              dc.readyState == .open else {
-            print("⚠️ [WebRTC] Unable to send greeting (data channel not open); enabling microphone immediately")
-            localAudioTrack?.isEnabled = true
-            didSendInitialGreeting = true
-            awaitingGreetingCompletion = false
-            return
+        let sentImmediately = sendOrQueueDataChannelPayload(payload, description: "initial greeting in \(languageName)") { [weak self] in
+            guard let self = self else { return }
+            self.awaitingGreetingCompletion = true
+            self.didSendInitialGreeting = true
+            self.hasQueuedInitialGreeting = false
+            self.isAIResponding = true
+            self.conversationState = .speaking
+            print("👋 [Greeting] Sent initial greeting request in \(languageName)")
         }
         
-        let buffer = RTCDataBuffer(data: data, isBinary: false)
-        dc.sendData(buffer)
-        awaitingGreetingCompletion = true
-        didSendInitialGreeting = true
-        isAIResponding = true
-        conversationState = .speaking
-        print("👋 [Greeting] Sent initial greeting request in \(languageName)")
+        if !sentImmediately {
+            hasQueuedInitialGreeting = true
+        }
     }
     
     // Helpers to send events over WebRTC data channel
@@ -778,6 +781,72 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         await MainActor.run { [weak self] in
             self?.outboundEventSender?.sendJSONString(json)
         }
+    }
+    
+    @discardableResult
+    private func sendOrQueueDataChannelPayload(_ payload: [String: Any], description: String, onSend: (() -> Void)? = nil) -> Bool {
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else {
+            print("❌ [WebRTC] Failed to encode payload for \(description)")
+            return false
+        }
+        return sendOrQueueDataChannelData(data, description: description, onSend: onSend)
+    }
+    
+    @discardableResult
+    private func sendOrQueueDataChannelData(_ data: Data, description: String, onSend: (() -> Void)? = nil) -> Bool {
+        guard let dc = dataChannel else {
+            print("⚠️ [WebRTC] Data channel unavailable; queued \(description)")
+            pendingDataChannelMessages.append(PendingDataChannelMessage(payload: data, description: description, onSend: onSend))
+            isDataChannelReady = false
+            return false
+        }
+        
+        if dc.readyState == .open {
+            let buffer = RTCDataBuffer(data: data, isBinary: false)
+            if dc.sendData(buffer) {
+                print("📤 [WebRTC] Sent \(description) over data channel")
+                onSend?()
+                return true
+            } else {
+                print("⚠️ [WebRTC] Failed to send \(description); re-queuing")
+                DispatchQueue.main.async { [weak self] in
+                    self?.flushPendingDataChannelMessages()
+                }
+            }
+        } else {
+            print("⏳ [WebRTC] Data channel not ready; queued \(description)")
+            isDataChannelReady = false
+        }
+        
+        pendingDataChannelMessages.append(PendingDataChannelMessage(payload: data, description: description, onSend: onSend))
+        
+        if dc.readyState == .open {
+            DispatchQueue.main.async { [weak self] in
+                self?.flushPendingDataChannelMessages()
+            }
+        }
+        return false
+    }
+    
+    private func flushPendingDataChannelMessages() {
+        guard let dc = dataChannel, dc.readyState == .open else { return }
+        guard !pendingDataChannelMessages.isEmpty else { return }
+        
+        print("📤 [WebRTC] Flushing \(pendingDataChannelMessages.count) queued data channel message(s)")
+        var remaining: [PendingDataChannelMessage] = []
+        
+        for message in pendingDataChannelMessages {
+            let buffer = RTCDataBuffer(data: message.payload, isBinary: false)
+            if dc.sendData(buffer) {
+                print("📤 [WebRTC] Sent queued \(message.description)")
+                message.onSend?()
+            } else {
+                print("⚠️ [WebRTC] Failed to send queued \(message.description); keeping in queue")
+                remaining.append(message)
+            }
+        }
+        
+        pendingDataChannelMessages = remaining
     }
     
     private func requestResponseOverDataChannel() async {
@@ -1760,6 +1829,18 @@ extension OpenAIRealtimeService: RTCPeerConnectionDelegate {
 extension OpenAIRealtimeService: RTCDataChannelDelegate {
     nonisolated func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
         print("📡 [WebRTC] Data channel state: \(dataChannel.readyState)")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            switch dataChannel.readyState {
+            case .open:
+                self.isDataChannelReady = true
+                self.flushPendingDataChannelMessages()
+            case .closing, .closed:
+                self.isDataChannelReady = false
+            default:
+                break
+            }
+        }
     }
     nonisolated func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
         onDataChannelMessage(buffer)
