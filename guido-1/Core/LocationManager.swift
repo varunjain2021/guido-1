@@ -7,6 +7,7 @@
 
 import Foundation
 import CoreLocation
+import MapKit
 import Combine
 import Contacts
 
@@ -28,6 +29,8 @@ class LocationManager: NSObject, ObservableObject {
     private let geocoder = CLGeocoder()
     private var locationHistory: [LocationReading] = []
     private var movementTimer: Timer?
+    // Feature flag to disable MapKit nearby search
+    private let nearbyPlacesEnabled: Bool = false
     
     // Proactive guidance tracking
     private var lastProactiveLocationTime: Date?
@@ -255,22 +258,49 @@ class LocationManager: NSObject, ObservableObject {
     // MARK: - Nearby Places
     
     private func findNearbyPlaces() {
+        // Disabled by feature flag
+        guard nearbyPlacesEnabled else { return }
         guard let location = currentLocation else { return }
         
         // Search for nearby points of interest
         let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = "restaurants, attractions, hotels, transportation"
         request.region = MKCoordinateRegion(
             center: location.coordinate,
             latitudinalMeters: 1000,
             longitudinalMeters: 1000
         )
         
+        // Prefer POI filter over a long comma-separated natural language query (prevents MKError -8)
+        if #available(iOS 14.0, *) {
+            var categories: [MKPointOfInterestCategory] = [
+                .restaurant,
+                .cafe,
+                .museum,
+                .park,
+                .hotel
+            ]
+            // Public transport category (if available)
+            if let publicTransport = MKPointOfInterestCategory(rawValue: "MKPOICategoryPublicTransport") {
+                categories.append(publicTransport)
+            }
+            request.pointOfInterestFilter = MKPointOfInterestFilter(including: Set(categories))
+            request.resultTypes = .pointOfInterest
+        } else {
+            // Fallback simple query for older OS versions
+            request.naturalLanguageQuery = "restaurants"
+        }
+        
         let search = MKLocalSearch(request: request)
         search.start { [weak self] response, error in
             Task { @MainActor in
                 if let error = error {
-                    print("❌ Failed to find nearby places: \(error)")
+                    // Handle MKErrorDomain (e.g., -8) by falling back to multiple simpler searches
+                    if (error as NSError).domain == MKErrorDomain {
+                        let queries = ["restaurants", "attractions", "hotels", "transportation"]
+                        self?.fallbackNearbyPlacesSearch(queries: queries, around: location)
+                    } else {
+                        print("❌ Failed to find nearby places: \(error)")
+                    }
                     return
                 }
                 
@@ -293,6 +323,58 @@ class LocationManager: NSObject, ObservableObject {
                 
                 print("📍 Found \(self?.nearbyPlaces.count ?? 0) nearby places")
             }
+        }
+    }
+    
+    private func fallbackNearbyPlacesSearch(queries: [String], around location: CLLocation) {
+        let region = MKCoordinateRegion(
+            center: location.coordinate,
+            latitudinalMeters: 1000,
+            longitudinalMeters: 1000
+        )
+        
+        let group = DispatchGroup()
+        var collected: [MKMapItem] = []
+        
+        for q in queries {
+            group.enter()
+            let r = MKLocalSearch.Request()
+            r.naturalLanguageQuery = q
+            r.region = region
+            let s = MKLocalSearch(request: r)
+            s.start { response, _ in
+                if let items = response?.mapItems {
+                    collected.append(contentsOf: items)
+                }
+                group.leave()
+            }
+        }
+        
+        group.notify(queue: .main) { [weak self] in
+            // Deduplicate by coordinate+name and limit
+            var seen = Set<String>()
+            let unique = collected.filter { item in
+                let key = "\(item.name ?? "Unknown")|\(item.placemark.coordinate.latitude),\(item.placemark.coordinate.longitude)"
+                if seen.contains(key) { return false }
+                seen.insert(key)
+                return true
+            }
+            
+            self?.nearbyPlaces = unique.prefix(10).map { item in
+                NearbyPlace(
+                    name: item.name ?? "Unknown",
+                    category: item.pointOfInterestCategory?.rawValue ?? "Unknown",
+                    location: CLLocation(
+                        latitude: item.placemark.coordinate.latitude,
+                        longitude: item.placemark.coordinate.longitude
+                    ),
+                    distance: location.distance(from: CLLocation(
+                        latitude: item.placemark.coordinate.latitude,
+                        longitude: item.placemark.coordinate.longitude
+                    ))
+                )
+            }
+            print("📍 Fallback found \(self?.nearbyPlaces.count ?? 0) nearby places")
         }
     }
 }
