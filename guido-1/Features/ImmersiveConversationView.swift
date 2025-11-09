@@ -51,6 +51,12 @@ struct ImmersiveConversationView: View {
                 testEnvironment: appState.selectedTheme
             )
             .ignoresSafeArea()
+            .onAppear {
+                realtimeService.setPreferredLanguageCode(appState.conversationLanguageCode)
+            }
+            .onChange(of: appState.conversationLanguageCode) { newCode in
+                realtimeService.setPreferredLanguageCode(newCode)
+            }
             
             // Removed test overlay; theme selection is in Settings
             

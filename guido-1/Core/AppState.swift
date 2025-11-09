@@ -16,6 +16,9 @@ class AppState: ObservableObject {
     // UI Theme (Canvas)
     @Published var selectedTheme: CanvasEnvironment = .water
     
+    // Conversation Language (ISO-639-1), default English
+    @Published var conversationLanguageCode: String = "en"
+    
     // API Keys - Loaded from Config.plist for security
     let openAIAPIKey: String
     let elevenLabsAPIKey: String

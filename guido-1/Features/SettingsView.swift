@@ -77,6 +77,43 @@ struct SettingsView: View {
                         }
                         
                         Divider().opacity(0.3)
+                        
+                        // Language
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Language")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(.tertiaryLabel))
+                            // Language options styled consistently with theme tiles
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
+                                ForEach(supportedLanguages, id: \.code) { lang in
+                                    Button(action: {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            appState.conversationLanguageCode = lang.code
+                                        }
+                                    }) {
+                                        let isSelected = appState.conversationLanguageCode == lang.code
+                                        ZStack {
+                                            LiquidGlassCard(intensity: isSelected ? 0.6 : 0.4, cornerRadius: 10, shadowIntensity: isSelected ? 0.2 : 0.08) {
+                                                Text(lang.displayName)
+                                                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                                                    .foregroundColor(isSelected ? .blue : Color(.secondaryLabel))
+                                                    .multilineTextAlignment(.center)
+                                                    .frame(width: 96, height: 36)
+                                                    .minimumScaleFactor(0.8)
+                                            }
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 10)
+                                                    .stroke(isSelected ? Color.blue.opacity(0.6) : Color.clear, lineWidth: 2)
+                                            )
+                                        }
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                    .accessibilityLabel("Select language \(lang.displayName)")
+                                }
+                            }
+                        }
+                        
+                        Divider().opacity(0.3)
                         Button(action: { Task { await appState.signOut() } }) {
                             HStack {
                                 Text("Log out")
@@ -116,5 +153,19 @@ private func themeName(_ env: CanvasEnvironment) -> String {
     case .unknown: return "Default"
     }
 }
+
+// MARK: - Supported Languages
+private let supportedLanguages: [(code: String, displayName: String)] = [
+    ("en", "English"),
+    ("es", "Spanish"),
+    ("fr", "French"),
+    ("de", "German"),
+    ("it", "Italian"),
+    ("pt", "Portuguese"),
+    ("ja", "Japanese"),
+    ("ko", "Korean"),
+    ("zh", "Chinese"),
+    ("hi", "Hindi")
+]
 
 

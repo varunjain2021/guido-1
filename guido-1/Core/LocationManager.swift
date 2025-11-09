@@ -280,10 +280,8 @@ class LocationManager: NSObject, ObservableObject {
                 .hotel
             ]
             // Public transport category (if available)
-            if let publicTransport = MKPointOfInterestCategory(rawValue: "MKPOICategoryPublicTransport") {
-                categories.append(publicTransport)
-            }
-            request.pointOfInterestFilter = MKPointOfInterestFilter(including: Set(categories))
+            categories.append(.publicTransport)
+            request.pointOfInterestFilter = MKPointOfInterestFilter(including: categories)
             request.resultTypes = .pointOfInterest
         } else {
             // Fallback simple query for older OS versions

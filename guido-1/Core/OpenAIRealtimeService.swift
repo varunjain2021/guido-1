@@ -318,6 +318,9 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     // Outbound event sender (provided by WebRTCManager)
     weak var outboundEventSender: WebRTCEventSender?
     
+    // Preferred conversation language (ISO-639-1), defaults to English
+    private(set) var preferredLanguageCode: String = "en"
+    
     init(apiKey: String) {
         self.apiKey = apiKey
         self.urlSession = URLSession.shared
@@ -325,6 +328,15 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         super.init()
         setupAudioSession()
         print("🚀 OpenAI Realtime Service initialized")
+    }
+    
+    func setPreferredLanguageCode(_ code: String) {
+        let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return }
+        preferredLanguageCode = normalized
+        Task {
+            await sendLanguageUpdateOverDataChannel()
+        }
     }
 
     func setEventSender(_ sender: WebRTCEventSender) {
@@ -639,7 +651,11 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         let sessionDict: [String: Any] = [
             "instructions": realtimeSystemInstructions(),
             "tool_choice": "auto",
-            "tools": toolsArray
+            "tools": toolsArray,
+            "input_audio_transcription": [
+                "model": "whisper-1",
+                "language": preferredLanguageCode
+            ]
         ]
         let payload: [String: Any] = [
             "type": "session.update",
@@ -653,6 +669,29 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             print("🔧 [WebRTC] Sent session.update over data channel")
         } else {
             print("⚠️ [WebRTC] Data channel not open; session.update not sent")
+        }
+    }
+    
+    private func sendLanguageUpdateOverDataChannel() async {
+        let eventId = UUID().uuidString
+        let sessionDict: [String: Any] = [
+            "input_audio_transcription": [
+                "model": "whisper-1",
+                "language": preferredLanguageCode
+            ]
+        ]
+        let payload: [String: Any] = [
+            "type": "session.update",
+            "event_id": eventId,
+            "session": sessionDict
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        if let dc = dataChannel, dc.readyState == .open {
+            let buffer = RTCDataBuffer(data: data, isBinary: false)
+            dc.sendData(buffer)
+            print("🔧 [WebRTC] Updated transcription language → \(preferredLanguageCode)")
+        } else {
+            print("⚠️ [WebRTC] Data channel not open; language update deferred")
         }
     }
     
@@ -1517,6 +1556,7 @@ extension OpenAIRealtimeService {
     
     func realtimeSystemInstructions() -> String {
         let rulesText = NavigationRulesProvider.loadRulesText()
+        let languageHint = preferredLanguageCode.lowercased() == "en" ? "" : "\nRespond in \(preferredLanguageCode.uppercased()) unless the user requests another language."
         return """
                 You are Guido, a helpful, upbeat and conversational AI travel companion with access to real-time tools and location data. You're designed to have natural, flowing conversations about travel while providing personalized, location-aware assistance.
                 
@@ -1566,6 +1606,7 @@ extension OpenAIRealtimeService {
                 - Use precise coordinates and map geometry to validate each step. Favor sidewalks, marked paths, and official entrances; avoid routing through building interiors, water, highways, or closed areas.
                 - Before giving the next step, prefer calling tools (get_user_location, get_directions, find_nearby_landmarks/places/transport) to fetch specific named anchors and entrance points.
                 - If the user is against a wall or obstacle, verify with map data (building footprint, sidewalk network, park boundaries), then guide along the open sidewalk to the nearest corner or entrance. Confirm anchors before proceeding.
+                \(languageHint)
                 """
     }
     
