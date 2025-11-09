@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 @main
 struct guido_1App: App {
@@ -23,6 +24,7 @@ struct guido_1App: App {
                     print("🚀 Guido app launched successfully!")
                     print("💡 Tip: iOS Simulator messages above are normal system behavior")
                     print("📱 Look for emoji-prefixed messages for app-specific logs")
+                    NotificationService.shared.requestAuthorizationIfNeeded()
                 }
         }
     }

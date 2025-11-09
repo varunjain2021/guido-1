@@ -21,6 +21,8 @@ struct ImmersiveConversationView: View {
     @State private var resultsTitle = ""
     @State private var isConnecting = false
     @State private var connectionError: String?
+    @State private var lastDirectionsSignature: String?
+    @State private var persistResults: Bool = false
     
     // Canvas State
     @State private var userSpeaking = false
@@ -146,9 +148,9 @@ struct ImmersiveConversationView: View {
             updateSpeechStates(for: state)
             
             // Hide results when returning to idle
-            if state == .idle && showResults {
+            if state == .idle && showResults && !persistResults {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                    if realtimeService.conversationState == .idle {
+                    if realtimeService.conversationState == .idle && !persistResults {
                         hideResults()
                     }
                 }
@@ -159,6 +161,11 @@ struct ImmersiveConversationView: View {
         }
         .onReceive(realtimeService.$conversation) { conversation in
             processLatestResponse(from: conversation)
+        }
+        .onReceive(realtimeService.toolManager.$toolResults) { toolResults in
+            if let directionsPayload = toolResults["get_directions"] {
+                handleDirectionsToolResultPayload(directionsPayload)
+            }
         }
         .onReceive(realtimeService.$connectionStatus) { status in
             if status.hasPrefix("Error:") {
@@ -329,14 +336,105 @@ struct ImmersiveConversationView: View {
             await extractAndShowResults(from: latestMessage.content)
         }
     }
+
+    private func handleDirectionsToolResultPayload(_ payload: Any) {
+        guard let payloadDict = decodeDirectionsPayload(payload),
+              let mapsURLString = payloadDict["maps_url"] as? String,
+              let webURL = URL(string: mapsURLString) else {
+            print("[Directions] ⚠️ Unable to parse directions payload: \(payload)")
+            return
+        }
+
+        let summary = payloadDict["summary"] as? String ?? "Open Google Maps to view full turn-by-turn directions."
+        let destination = (payloadDict["destination"] as? String) ?? "Directions"
+        let modeRaw = (payloadDict["transportation_mode"] as? String ?? "").capitalized
+        let etaMinutes = payloadDict["eta_minutes"] as? Int
+        let distanceMeters = payloadDict["distance_meters"] as? Int
+        let subtitle = buildDirectionsSubtitle(etaMinutes: etaMinutes, mode: modeRaw, distanceMeters: distanceMeters)
+        let appURL = (payloadDict["maps_app_url"] as? String).flatMap { URL(string: $0) }
+
+        let signature = "\(webURL.absoluteString)|\(summary)"
+        if signature == lastDirectionsSignature {
+            return
+        }
+        lastDirectionsSignature = signature
+
+        let action = LiquidGlassOverlay.ResultItem.Action(
+            title: "Open in Google Maps",
+            primaryURL: appURL ?? webURL,
+            fallbackURL: appURL != nil ? webURL : nil
+        )
+
+        let resultItem = LiquidGlassOverlay.ResultItem(
+            title: destination,
+            subtitle: subtitle.isEmpty ? nil : subtitle,
+            detail: summary,
+            iconName: "arrow.triangle.turn.up.right.diamond",
+            color: Color.blue,
+            action: action
+        )
+
+        print("[Directions] 🗺️ Prepared Immersive directions card for '\(destination)'")
+
+        DispatchQueue.main.async {
+            showResults([resultItem], title: "Directions", autoDismissAfter: nil)
+            
+            // If app is not active (e.g., phone locked), also send a notification with the link
+            if UIApplication.shared.applicationState != .active {
+                NotificationService.shared.requestAuthorizationIfNeeded()
+                NotificationService.shared.sendDirectionsNotification(
+                    destination: destination,
+                    summary: summary,
+                    mapsURL: appURL ?? webURL
+                )
+            }
+        }
+    }
+
+    private func decodeDirectionsPayload(_ payload: Any) -> [String: Any]? {
+        if let dict = payload as? [String: Any] {
+            return dict
+        } else if let text = payload as? String,
+                  let data = text.data(using: .utf8),
+                  let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            return dict
+        }
+        return nil
+    }
+
+    private func buildDirectionsSubtitle(etaMinutes: Int?, mode: String, distanceMeters: Int?) -> String {
+        var components: [String] = []
+        if let eta = etaMinutes, eta > 0 {
+            components.append("~\(eta) min")
+        }
+        if !mode.isEmpty {
+            components.append(mode)
+        }
+        if let meters = distanceMeters, meters > 0 {
+            components.append(formatDistance(meters: meters))
+        }
+        return components.joined(separator: " • ")
+    }
+
+    private func formatDistance(meters: Int) -> String {
+        if meters < 1000 {
+            return "\(meters) m"
+        }
+        let km = Double(meters) / 1000.0
+        return String(format: "%.1f km", km)
+    }
     
     private func extractAndShowResults(from content: String) async {
+        // If a persistent directions card is visible, do not show additional result cards
+        if persistResults {
+            return
+        }
         let prompt = createExtractionPrompt(for: content)
         
         do {
             // Use existing environment AppState via @EnvironmentObject
             let response = try await appState.openAIChatService.generateStructuredData(prompt: prompt)
-            let results = parseStructuredResponse(response)
+            var results = parseStructuredResponse(response)
             
             await MainActor.run {
                 if !results.isEmpty {
@@ -462,19 +560,7 @@ struct ImmersiveConversationView: View {
                 }
                 
                 // Parse directions
-                if let directions = json["directions"] as? [[String: Any]] {
-                    for direction in directions.prefix(1) {
-                        if let destination = direction["destination"] as? String {
-                            results.append(LiquidGlassOverlay.ResultItem(
-                                title: destination,
-                                subtitle: direction["time"] as? String,
-                                detail: direction["distance"] as? String,
-                                iconName: "arrow.triangle.turn.up.right.diamond",
-                                color: .green
-                            ))
-                        }
-                    }
-                }
+                // Intentionally skip generic directions items; we show a dedicated directions handoff card instead.
                 
                 // Parse weather
                 if let weather = json["weather"] as? [[String: Any]] {
@@ -555,17 +641,19 @@ struct ImmersiveConversationView: View {
         return "Results"
     }
     
-    private func showResults(_ results: [LiquidGlassOverlay.ResultItem], title: String) {
+    private func showResults(_ results: [LiquidGlassOverlay.ResultItem], title: String, autoDismissAfter: TimeInterval? = 15.0) {
         withAnimation(.spring(dampingFraction: 0.8, blendDuration: 0.6)) {
             currentResults = results
             resultsTitle = title
             showResults = true
+            persistResults = (autoDismissAfter == nil)
         }
         
-        // Auto-hide after 15 seconds
-        DispatchQueue.main.asyncAfter(deadline: .now() + 15.0) {
-            if showResults {
-                hideResults()
+        if let delay = autoDismissAfter {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                if showResults && !persistResults {
+                    hideResults()
+                }
             }
         }
     }
@@ -573,6 +661,7 @@ struct ImmersiveConversationView: View {
     private func hideResults() {
         withAnimation(.easeInOut(duration: 0.4)) {
             showResults = false
+            persistResults = false
     
         }
         

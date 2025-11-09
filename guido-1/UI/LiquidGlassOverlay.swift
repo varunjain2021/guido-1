@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 // MARK: - LiquidGlass Namespace
 
@@ -176,42 +177,74 @@ struct IndividualResultCard: View {
     
     var body: some View {
         LiquidGlassCard(intensity: 0.8, cornerRadius: 20, shadowIntensity: 0.25) {
-            HStack(spacing: 16) {
-                // Icon with liquid glass backing
-                LiquidGlassCard(intensity: 0.5, cornerRadius: 12, shadowIntensity: 0.1) {
-                    Image(systemName: result.iconName)
-                        .font(.system(size: 20, weight: .medium))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [result.color, result.color.opacity(0.7)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 16) {
+                    // Icon with liquid glass backing
+                    LiquidGlassCard(intensity: 0.5, cornerRadius: 12, shadowIntensity: 0.1) {
+                        Image(systemName: result.iconName)
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [result.color, result.color.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
                             )
+                            .frame(width: 40, height: 40)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(result.title)
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .foregroundColor(.primary)
+                        
+                        if let subtitle = result.subtitle {
+                            Text(subtitle)
+                                .font(.system(size: 14, weight: .medium, design: .rounded))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                
+                if let detail = result.detail {
+                    Text(detail)
+                        .font(.system(size: 12, weight: .regular, design: .rounded))
+                        .foregroundColor(Color(.tertiaryLabel))
+                        .lineLimit(3)
+                }
+                
+                if let action = result.action {
+                    Divider()
+                        .opacity(0.2)
+                    
+                    Button(action: {
+                        open(action: action)
+                        onDismiss()
+                    }) {
+                        HStack {
+                            Image(systemName: "arrow.up.right")
+                                .font(.system(size: 14, weight: .semibold))
+                            
+                            Text(action.title)
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            
+                            Spacer()
+                        }
+                        .foregroundColor(result.color)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(result.color.opacity(0.12))
                         )
-                        .frame(width: 40, height: 40)
-                }
-                
-                // Content
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(result.title)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundColor(.primary)
-                    
-                    if let subtitle = result.subtitle {
-                        Text(subtitle)
-                            .font(.system(size: 14, weight: .medium, design: .rounded))
-                            .foregroundColor(.secondary)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(result.color.opacity(0.35), lineWidth: 1)
+                        )
                     }
-                    
-                    if let detail = result.detail {
-                        Text(detail)
-                            .font(.system(size: 12, weight: .regular, design: .rounded))
-                            .foregroundColor(Color(.tertiaryLabel))
-                            .lineLimit(2)
-                    }
+                    .buttonStyle(PlainButtonStyle())
                 }
-                
-                Spacer()
             }
             .padding(16)
         }
@@ -230,6 +263,17 @@ struct IndividualResultCard: View {
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.2)) {
                 cardHover = hovering
+            }
+        }
+    }
+
+    private func open(action: LiquidGlassOverlay.ResultItem.Action) {
+        let application = UIApplication.shared
+        print("[Directions] 👆 Opening directions link: \(action.primaryURL.absoluteString)")
+        application.open(action.primaryURL, options: [:]) { success in
+            if !success, let fallback = action.fallbackURL {
+                print("[Directions] ↩️ Primary URL failed, falling back to: \(fallback.absoluteString)")
+                application.open(fallback, options: [:], completionHandler: nil)
             }
         }
     }
@@ -653,13 +697,28 @@ extension LiquidGlassOverlay {
         let detail: String?
         let iconName: String
         let color: Color
+        let action: Action?
         
-        init(title: String, subtitle: String? = nil, detail: String? = nil, iconName: String = "location.fill", color: Color = .blue) {
+        struct Action {
+            let title: String
+            let primaryURL: URL
+            let fallbackURL: URL?
+        }
+        
+        init(
+            title: String,
+            subtitle: String? = nil,
+            detail: String? = nil,
+            iconName: String = "location.fill",
+            color: Color = .blue,
+            action: Action? = nil
+        ) {
             self.title = title
             self.subtitle = subtitle
             self.detail = detail
             self.iconName = iconName
             self.color = color
+            self.action = action
         }
     }
 }
