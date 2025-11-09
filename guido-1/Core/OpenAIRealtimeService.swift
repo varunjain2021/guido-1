@@ -292,6 +292,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     private var peerConnection: RTCPeerConnection?
     private var dataChannel: RTCDataChannel?
     private var localAudioSender: RTCRtpSender?
+    private var localAudioTrack: RTCAudioTrack?
     private var peerConnectionFactory: RTCPeerConnectionFactory?
     #endif
 
@@ -317,6 +318,11 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     
     // Outbound event sender (provided by WebRTCManager)
     weak var outboundEventSender: WebRTCEventSender?
+    
+    // Session gating
+    private var isSessionReady = false
+    private var didSendInitialGreeting = false
+    private var awaitingGreetingCompletion = false
     
     // Preferred conversation language (ISO-639-1), defaults to English
     private(set) var preferredLanguageCode: String = "en"
@@ -475,6 +481,13 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     // MARK: - Connection Management
     func connect() async throws {
         print("🔌 [CONNECT] Connecting to OpenAI Realtime API...")
+        // Reset session gating state
+        isSessionReady = false
+        awaitingGreetingCompletion = false
+        didSendInitialGreeting = false
+        #if !targetEnvironment(simulator)
+        localAudioTrack?.isEnabled = false
+        #endif
         // Get ephemeral token
         let ephemeralKey = try await getEphemeralKey()
         print("🔐 [CONNECT] Retrieved ephemeral key")
@@ -502,6 +515,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             peerConnection?.close()
             dataChannel = nil
             peerConnection = nil
+            localAudioTrack = nil
             localAudioSender = nil
             peerConnectionFactory = nil
             #endif
@@ -538,6 +552,10 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         }
         
         print("✅ Disconnected from OpenAI Realtime API")
+        
+        isSessionReady = false
+        awaitingGreetingCompletion = false
+        didSendInitialGreeting = false
     }
     
     // MARK: - Private Methods (WebRTC only)
@@ -562,6 +580,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         ], optionalConstraints: nil)
         let audioSource = factory.audioSource(with: audioConstraints)
         let audioTrack = factory.audioTrack(with: audioSource, trackId: "audio0")
+        audioTrack.isEnabled = false // Gate microphone until session ready & greeting complete
+        localAudioTrack = audioTrack
         localAudioSender = peerConnection?.add(audioTrack, streamIds: ["stream0"])
         // Data channel for events
         let dcConfig = RTCDataChannelConfiguration()
@@ -695,6 +715,57 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         }
     }
     
+    private func sendClearInputBuffer() async {
+        let payload: [String: Any] = [
+            "type": "input_audio_buffer.clear",
+            "event_id": UUID().uuidString
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        if let dc = dataChannel, dc.readyState == .open {
+            let buffer = RTCDataBuffer(data: data, isBinary: false)
+            dc.sendData(buffer)
+            print("🧹 [WebRTC] Cleared input audio buffer before enabling microphone")
+        } else {
+            print("⚠️ [WebRTC] Data channel not open; unable to clear input buffer")
+        }
+    }
+    
+    private func sendInitialGreetingInPreferredLanguage() async {
+        guard !didSendInitialGreeting else { return }
+        
+        let langCode = preferredLanguageCode.lowercased()
+        let languageName = languageDisplayName(for: langCode)
+        let instructions = """
+        Speak one short, friendly sentence in \(languageName) (language code: \(langCode.uppercased())) introducing yourself as Guido and letting the user know you're ready to help.
+        """
+        let payload: [String: Any] = [
+            "type": "response.create",
+            "event_id": UUID().uuidString,
+            "response": [
+                "instructions": instructions,
+                "modalities": ["audio", "text"]
+            ]
+        ]
+        
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let dc = dataChannel,
+              dc.readyState == .open else {
+            print("⚠️ [WebRTC] Unable to send greeting (data channel not open); enabling microphone immediately")
+            localAudioTrack?.isEnabled = true
+            didSendInitialGreeting = true
+            awaitingGreetingCompletion = false
+            return
+        }
+        
+        let buffer = RTCDataBuffer(data: data, isBinary: false)
+        dc.sendData(buffer)
+        awaitingGreetingCompletion = true
+        didSendInitialGreeting = true
+        isAIResponding = true
+        conversationState = .speaking
+        print("👋 [Greeting] Sent initial greeting request in \(languageName)")
+    }
+    
     // Helpers to send events over WebRTC data channel
     private func sendEventOverDataChannel<T: Encodable>(_ event: T) async {
         let encoder = JSONEncoder()
@@ -819,8 +890,19 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 
             case "session.updated":
                 print("✅ Session updated successfully")
+                if !isSessionReady {
+                    isSessionReady = true
+                    await sendClearInputBuffer()
+                    if !didSendInitialGreeting {
+                        await sendInitialGreetingInPreferredLanguage()
+                    }
+                }
                 
             case "conversation.item.input_audio_transcription.delta":
+                guard isSessionReady else {
+                    print("⏳ [TRANSCRIPT] Ignoring transcription delta before session ready")
+                    return
+                }
                 // Handle incremental user transcription
                 if let jsonDict = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any],
                    let delta = jsonDict["delta"] as? String {
@@ -831,6 +913,10 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 }
                 
             case "conversation.item.input_audio_transcription.completed":
+                guard isSessionReady else {
+                    print("⏳ [TRANSCRIPT] Ignoring completed transcription before session ready")
+                    return
+                }
                 if let jsonDict = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any],
                    let transcript = jsonDict["transcript"] as? String {
                     
@@ -930,6 +1016,12 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 print("🎵 [AI_AUDIO] Audio response completed - setting isAIResponding=false")
                 // Re-enable microphone input after AI finishes speaking
                 isAIResponding = false
+                
+                if awaitingGreetingCompletion {
+                    awaitingGreetingCompletion = false
+                    localAudioTrack?.isEnabled = true
+                    print("🎙️ [Mic] Enabled microphone after greeting completion")
+                }
                 
                 // Emit snapshot at response done (playback may still be flushing)
                 // no-op summary in WebRTC mode
@@ -1608,6 +1700,22 @@ extension OpenAIRealtimeService {
                 - If the user is against a wall or obstacle, verify with map data (building footprint, sidewalk network, park boundaries), then guide along the open sidewalk to the nearest corner or entrance. Confirm anchors before proceeding.
                 \(languageHint)
                 """
+    }
+    
+    private func languageDisplayName(for code: String) -> String {
+        switch code.lowercased() {
+        case "en": return "English"
+        case "es": return "Spanish"
+        case "fr": return "French"
+        case "de": return "German"
+        case "it": return "Italian"
+        case "pt": return "Portuguese"
+        case "ja": return "Japanese"
+        case "ko": return "Korean"
+        case "zh": return "Chinese"
+        case "hi": return "Hindi"
+        default: return code.uppercased()
+        }
     }
     
     func discoveryOrchestratorInstructions() -> String {
