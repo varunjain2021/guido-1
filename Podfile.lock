@@ -15,17 +15,21 @@ PODS:
   - AudioKit/Sporth (5.1.0):
     - AudioKit/Soundpipe
   - AudioKit/STK (5.1.0)
+  - GoogleWebRTC (1.1.32000)
 
 DEPENDENCIES:
   - AudioKit (~> 5.0)
+  - GoogleWebRTC (~> 1.1)
 
 SPEC REPOS:
   trunk:
     - AudioKit
+    - GoogleWebRTC
 
 SPEC CHECKSUMS:
   AudioKit: 81246a4ccdd7ca3c6e0076f913070e90987b4369
+  GoogleWebRTC: 4d261187b30512efdb711d21fa961a6adf138717
 
-PODFILE CHECKSUM: 173f5380a22612eefd6bd94ec93bf76462c32b2d
+PODFILE CHECKSUM: 2e74dc608e8b434eb1db7331466517f21695fed5
 
 COCOAPODS: 1.16.2

@@ -14,8 +14,7 @@ target 'guido-1' do
   pod 'AudioKit', '~> 5.0'  # Powerful audio processing toolkit
   
   # 🌐 WebRTC for Realtime API
-  # pod 'GoogleWebRTC', '~> 1.1'  # Temporarily disabled due to sandbox issues
-  # WebRTC framework will be added manually to avoid CocoaPods embedding issues
+  pod 'GoogleWebRTC', '~> 1.1'
   
   # 🔍 Alternative VAD approaches we can implement:
   # AudioKit provides excellent real-time audio analysis capabilities

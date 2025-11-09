@@ -26,5 +26,9 @@
 	<string>Guido uses your location to provide relevant local recommendations and suggestions based on where you are.</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Guido can check your calendar to help plan travel activities around your schedule.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Guido may use the camera for optional video capture during real-time conversations.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>

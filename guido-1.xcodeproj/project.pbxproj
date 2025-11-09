@@ -74,36 +74,26 @@
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
-/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-		D4DD278D2E3A81D1009E2E8C /* Exceptions for "guido-1" folder in "Embed Frameworks" phase from "guido-1" target */ = {
-			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
-			attributesByRelativePath = {
-				Frameworks/WebRTC.framework = (CodeSignOnCopy, RemoveHeadersOnCopy, );
-			};
-			buildPhase = D4DD278C2E3A81D1009E2E8C /* Embed Frameworks */;
-			membershipExceptions = (
-				Frameworks/WebRTC.framework,
-			);
-		};
-/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D47B0FEC2E35DB7B0076F1FF /* guido-1 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				D47B10272E35E77F0076F1FF /* Exceptions for "guido-1" folder in "guido-1" target */,
-				D4DD278D2E3A81D1009E2E8C /* Exceptions for "guido-1" folder in "Embed Frameworks" phase from "guido-1" target */,
 			);
 			path = "guido-1";
 			sourceTree = "<group>";
 		};
 		D47B0FFA2E35DB7D0076F1FF /* guido-1Tests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "guido-1Tests";
 			sourceTree = "<group>";
 		};
 		D47B10042E35DB7D0076F1FF /* guido-1UITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "guido-1UITests";
 			sourceTree = "<group>";
 		};
@@ -201,6 +191,7 @@
 				D47B0FE72E35DB7B0076F1FF /* Frameworks */,
 				D47B0FE82E35DB7B0076F1FF /* Resources */,
 				D4DD278C2E3A81D1009E2E8C /* Embed Frameworks */,
+				9F16DF12D28F617468680ACA /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -244,6 +235,7 @@
 				D47B0FFD2E35DB7D0076F1FF /* Sources */,
 				D47B0FFE2E35DB7D0076F1FF /* Frameworks */,
 				D47B0FFF2E35DB7D0076F1FF /* Resources */,
+				00EE5302FB897DFEE6529BCB /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -330,6 +322,40 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		00EE5302FB897DFEE6529BCB /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-guido-1-guido-1UITests/Pods-guido-1-guido-1UITests-frameworks-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-guido-1-guido-1UITests/Pods-guido-1-guido-1UITests-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-guido-1-guido-1UITests/Pods-guido-1-guido-1UITests-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		9F16DF12D28F617468680ACA /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-guido-1/Pods-guido-1-frameworks-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-guido-1/Pods-guido-1-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-guido-1/Pods-guido-1-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
 		D67DD5A9382FD9979D09644F /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -532,7 +558,9 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				COPY_PHASE_STRIP = NO;
+				COPY_PHASE_STRIP = YES;
+				ONLY_ACTIVE_ARCH = NO;
+				STRIP_INSTALLED_PRODUCT = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -566,10 +594,7 @@
 				DEVELOPMENT_TEAM = ZKLADPT47Z;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/guido-1/Frameworks",
-				);
+				FRAMEWORK_SEARCH_PATHS = "$(inherited)";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "guido-1/Info.plist";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Guido uses your location to provide contextual travel recommendations and points of interest nearby.";
@@ -603,10 +628,7 @@
 				DEVELOPMENT_TEAM = ZKLADPT47Z;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/guido-1/Frameworks",
-				);
+				FRAMEWORK_SEARCH_PATHS = "$(inherited)";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "guido-1/Info.plist";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Guido uses your location to provide contextual travel recommendations and points of interest nearby.";
