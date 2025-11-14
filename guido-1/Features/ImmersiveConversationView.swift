@@ -107,8 +107,8 @@ struct ImmersiveConversationView: View {
                 }
             }
 
-            // Inline settings panel with tap-blocking backdrop
-            if appState.authStatus.isAuthenticated && showSettings {
+            // Inline settings panel with tap-blocking backdrop (never render if onboarding is visible)
+            if appState.authStatus.isAuthenticated && showSettings && !appState.onboarding.isVisible {
                 ZStack {
                     Color.black.opacity(0.0001)
                         .ignoresSafeArea()
@@ -155,6 +155,21 @@ struct ImmersiveConversationView: View {
             }
         }
         .navigationBarHidden(true)
+        // Ensure Settings never stays open underneath onboarding or across auth transitions
+        .onChange(of: appState.onboarding.isVisible) { visible in
+            if visible {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showSettings = false
+                }
+            }
+        }
+        .onChange(of: appState.authStatus.user?.id) { _ in
+            if showSettings {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showSettings = false
+                }
+            }
+        }
         .onReceive(realtimeService.$isConnected) { isConnected in
             if isConnected {
                 isConnecting = false

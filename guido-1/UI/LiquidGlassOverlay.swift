@@ -23,6 +23,7 @@ struct LiquidGlassCard: View {
     let shadowIntensity: Double
     
     let enableFloating: Bool
+    let enableShimmer: Bool
     
     @State private var floatAnimation: Double = 0.0
     
@@ -31,6 +32,7 @@ struct LiquidGlassCard: View {
         cornerRadius: CGFloat = 24,
         shadowIntensity: Double = 0.3,
         enableFloating: Bool = false,
+        enableShimmer: Bool = true,
         @ViewBuilder content: () -> Content
     ) {
         self.content = AnyView(content())
@@ -38,6 +40,7 @@ struct LiquidGlassCard: View {
         self.cornerRadius = cornerRadius
         self.shadowIntensity = shadowIntensity
         self.enableFloating = enableFloating
+        self.enableShimmer = enableShimmer
     }
     
     var body: some View {
@@ -45,7 +48,8 @@ struct LiquidGlassCard: View {
             .background(
                 LiquidGlassBackground(
                     intensity: intensity,
-                    cornerRadius: cornerRadius
+                    cornerRadius: cornerRadius,
+                    isAnimated: enableShimmer
                 )
             )
             .shadow(
@@ -69,9 +73,9 @@ struct LiquidGlassCard: View {
     }
     
     private func startFloatAnimation() {
-        Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-            withAnimation(.linear(duration: 0.1)) {
-                floatAnimation += 0.05 // Much slower, less frequent updates
+        Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { _ in
+            withAnimation(.linear(duration: 0.15)) {
+                floatAnimation += 0.03 // Even slower, smoother updates
             }
         }
     }
@@ -80,6 +84,7 @@ struct LiquidGlassCard: View {
 struct LiquidGlassBackground: View {
     let intensity: Double
     let cornerRadius: CGFloat
+    let isAnimated: Bool
     
     @State private var noiseOffset: CGPoint = .zero
     @State private var shimmerPhase: Double = 0.0
@@ -116,7 +121,10 @@ struct LiquidGlassBackground: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .offset(x: cos(shimmerPhase) * 10, y: sin(shimmerPhase) * 10)
+                        .offset(
+                            x: isAnimated ? cos(shimmerPhase) * 10 : 0,
+                            y: isAnimated ? sin(shimmerPhase) * 10 : 0
+                        )
                 )
             
             // Border highlight
@@ -151,7 +159,9 @@ struct LiquidGlassBackground: View {
                 .padding(1)
         }
         .onAppear {
-            startShimmerAnimation()
+            if isAnimated {
+                startShimmerAnimation()
+            }
         }
     }
     
