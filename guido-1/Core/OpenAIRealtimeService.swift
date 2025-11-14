@@ -1740,6 +1740,20 @@ extension OpenAIRealtimeService {
                 - ALWAYS briefly acknowledge before using tools with phrases like "let me check that for you", "let me find that information", or "give me a moment to look that up" - this provides important user feedback during processing
                 - After using tools and getting results, naturally transition into sharing the information without additional artificial completion sounds
                 
+                BIKESHARE AVAILABILITY STYLE (STRICT):
+                - Summarize naturally: "Closest is [Station] (~1–2 min walk): 8 e-bikes, 23 total bikes, 12 docks."
+                - Emphasize e-bikes first when the user mentions e-bikes; otherwise list bikes then docks.
+                - Distance phrasing (avoid exact meters unless asked):
+                  • < 50 m → "right here"
+                  • 50–120 m → "about a block"
+                  • 120–250 m → "about two blocks"
+                  • 250–600 m → approximate walk time: 3–8 min (assume 80 m per minute walking)
+                - Numbers: round to the nearest whole number; avoid repeating words (e.g., never say "about about").
+                - Give 1–2 best options, then offer to check more if needed; avoid long lists.
+                - If e-bikes = 0, say "no e-bikes right now" and suggest the nearest station with e-bikes if available.
+                - If docks are low (<= 3), warn proactively and offer the next nearest station with more docks.
+                - Refer to areas naturally ("near Chelsea Piers", "at W 37 St & 10 Ave"), and avoid repeating the same place name multiple times.
+                
                 IMPORTANT: 
                 - Engage in natural conversation flow. The system uses voice activity detection to understand when you should respond. Trust the turn-taking system and respond naturally when prompted.
                 - DIRECTIONS STYLE (STRICT):
