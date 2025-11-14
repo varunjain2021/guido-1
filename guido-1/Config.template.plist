@@ -14,5 +14,7 @@
     <string>https://your-project.supabase.co</string>
     <key>Supabase_Anon_Key</key>
     <string>your-supabase-anon-key-here</string>
+    <key>GBFS_Discovery_URL</key>
+    <string>https://gbfs.citibikenyc.com/gbfs/gbfs.json</string>
 </dict>
 </plist>

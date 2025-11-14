@@ -53,7 +53,15 @@ public enum ToolCategory: String, CaseIterable {
         case .calendar:
             return ["check_calendar", "get_local_time"]
         case .transport:
-            return ["find_transportation", "find_local_events"]
+            return [
+                "find_transportation",
+                "find_local_events",
+                "bikes_nearby",
+                "docks_nearby",
+                "station_availability",
+                "type_breakdown_nearby",
+                "parking_near_destination"
+            ]
         case .discovery:
             return [
                 "search_web",
@@ -128,6 +136,7 @@ public class FeatureFlags: ObservableObject {
     private init() {
         loadFromUserDefaults()
         setupRollbackTriggers()
+        ensureTransportCategoryEnabled()
     }
     
     // MARK: - Migration Control
@@ -284,6 +293,14 @@ public class FeatureFlags: ObservableObject {
             "performance_degradation": false,
             "user_complaints": false
         ]
+    }
+    
+    private func ensureTransportCategoryEnabled() {
+        if !enabledMCPCategories.contains(.transport) {
+            enabledMCPCategories.insert(.transport)
+            saveToUserDefaults()
+            print("🚲 [FeatureFlags] Transport category auto-enabled for bikeshare tools")
+        }
     }
     
     // MARK: - Persistence
