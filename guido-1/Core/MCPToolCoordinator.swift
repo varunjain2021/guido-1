@@ -46,6 +46,8 @@ public class MCPToolCoordinator: ObservableObject {
     private var photosVibeServer: PhotosVibeServer?
     private var webContentServer: WebContentServer?
     private var menuOfferingsServer: MenuOfferingsServer?
+    private var bikeshareServer: BikeshareMCPServer?
+    private var gbfsService: GBFSService?
     
     // MARK: - Initialization
     
@@ -76,6 +78,19 @@ public class MCPToolCoordinator: ObservableObject {
         menuOfferingsServer = MenuOfferingsServer()
         if let webContentServer {
             menuOfferingsServer?.setWebContentServer(webContentServer)
+        }
+        bikeshareServer = BikeshareMCPServer()
+        bikeshareServer?.setLocationManager(manager)
+        
+        if let discoveryURL = loadGBFSDiscoveryURL() {
+            let service = GBFSService(discoveryURL: discoveryURL)
+            gbfsService = service
+            bikeshareServer?.setGBFSService(service)
+            Task {
+                try? await service.refreshIfNeeded()
+            }
+        } else {
+            print("⚠️ [MCPToolCoordinator] GBFS discovery URL not configured; bikeshare tools disabled")
         }
         
         // Set services if they're available
@@ -117,6 +132,18 @@ public class MCPToolCoordinator: ObservableObject {
         }
         if featureFlags.shouldUseMCPForTool("menu_parse") || featureFlags.shouldUseMCPForTool("catalog_classify") {
             registerMenuOfferingsServer()
+        }
+        if featureFlags.shouldUseMCPForTool("bikes_nearby")
+            || featureFlags.shouldUseMCPForTool("docks_nearby")
+            || featureFlags.shouldUseMCPForTool("station_availability")
+            || featureFlags.shouldUseMCPForTool("type_breakdown_nearby")
+            || featureFlags.shouldUseMCPForTool("parking_near_destination") {
+            registerBikeshareServer()
+        }
+        
+        // After all servers are registered, register legacy wrappers for any remaining tools
+        Task {
+            await registerLegacyToolsWithMCP()
         }
     }
     
@@ -459,6 +486,37 @@ public class MCPToolCoordinator: ObservableObject {
         }
     }
     
+    private func registerBikeshareServer() {
+        guard let bikeshareServer = bikeshareServer else {
+            print("❌ [MCPToolCoordinator] BikeshareMCPServer not initialized")
+            return
+        }
+        let tools = bikeshareServer.listTools()
+        for tool in tools {
+            if mcpClient.hasToolAvailable(tool.name) { continue }
+            mcpClient.registerTool(tool) { [weak self] request in
+                guard let self = self, let server = self.bikeshareServer else {
+                    throw MCPClientError.internalError("Bikeshare server unavailable")
+                }
+                print("🚲 [MCPToolCoordinator] Routing '\(request.name)' to BikeshareMCPServer")
+                return await server.callTool(request)
+            }
+        }
+        if !tools.isEmpty {
+            print("✅ [MCPToolCoordinator] Registered \(tools.count) bikeshare tools with MCP client")
+        }
+    }
+    
+    private func loadGBFSDiscoveryURL() -> URL? {
+        if let path = Bundle.main.path(forResource: "Config", ofType: "plist"),
+           let dict = NSDictionary(contentsOfFile: path) as? [String: Any],
+           let raw = dict["GBFS_Discovery_URL"] as? String,
+           let url = URL(string: raw), !raw.isEmpty {
+            return url
+        }
+        return URL(string: "https://gbfs.citibikenyc.com/gbfs/gbfs.json")
+    }
+    
     private func setupMCPClient() {
         // Set up MCP client delegate
         mcpClient.delegate = self
@@ -467,7 +525,7 @@ public class MCPToolCoordinator: ObservableObject {
         Task {
             do {
                 try await mcpClient.connect()
-                await registerLegacyToolsWithMCP()
+                // Defer registering legacy wrappers until after servers are initialized in setLocationManager
             } catch {
                 print("❌ [MCPToolCoordinator] Failed to connect MCP client: \(error)")
             }
@@ -479,8 +537,16 @@ public class MCPToolCoordinator: ObservableObject {
         // This creates the MCP wrapper layer
         
         let toolDefinitions = RealtimeToolManager.getAllToolDefinitions()
+        var registeredCount = 0
         
         for toolDef in toolDefinitions {
+            // Do not override tools already registered by in-process MCP servers
+            if mcpClient.hasToolAvailable(toolDef.name) {
+                if featureFlags.debugLoggingEnabled {
+                    print("ℹ️ [MCPToolCoordinator] Skipping legacy wrapper for already-registered tool '\(toolDef.name)'")
+                }
+                continue
+            }
             let mcpTool = convertToMCPTool(toolDef)
             
             mcpClient.registerTool(mcpTool) { [weak self] request in
@@ -490,9 +556,10 @@ public class MCPToolCoordinator: ObservableObject {
                 
                 return await self.handleMCPToolCall(request)
             }
+            registeredCount += 1
         }
         
-        print("✅ [MCPToolCoordinator] Registered \(toolDefinitions.count) tools with MCP client")
+        print("✅ [MCPToolCoordinator] Registered \(registeredCount) tools with MCP client (legacy wrappers)")
     }
     
     private func convertToMCPTool(_ toolDef: RealtimeToolDefinition) -> MCPTool {

@@ -85,6 +85,11 @@ class RealtimeToolManager: ObservableObject {
             findNearbyLandmarksTool(),
             findNearbyServicesTool(),
             getRestaurantRecommendationsTool(),
+            getBikesNearbyTool(),
+            getDocksNearbyTool(),
+            getStationAvailabilityTool(),
+            getTypeBreakdownTool(),
+            getParkingNearDestinationTool(),
             getCurrencyTool(),
             getLanguageTranslationTool(),
             getSafetyInfoTool(),
@@ -531,6 +536,88 @@ class RealtimeToolManager: ObservableObject {
         )
     }
     
+    private static func getBikesNearbyTool() -> RealtimeToolDefinition {
+        return RealtimeToolDefinition(
+            name: "bikes_nearby",
+            description: "List nearby bike share stations with classic bikes or e-bikes available",
+            parameters: ToolParameters(
+                properties: [
+                    "radius_m": ParameterProperty(type: "number", description: "Search radius in meters (default 500)"),
+                    "limit": ParameterProperty(type: "number", description: "Maximum number of stations to return (default 5)"),
+                    "min_bikes": ParameterProperty(type: "number", description: "Minimum number of bikes required (default 1)"),
+                    "types": ParameterProperty(type: "string", description: "Bike type filter", enumValues: ["any","bike","ebike"]),
+                    "lat": ParameterProperty(type: "number", description: "Override latitude (optional)"),
+                    "lon": ParameterProperty(type: "number", description: "Override longitude (optional)")
+                ],
+                required: []
+            )
+        )
+    }
+    
+    private static func getDocksNearbyTool() -> RealtimeToolDefinition {
+        return RealtimeToolDefinition(
+            name: "docks_nearby",
+            description: "Find nearby stations with available docks for returning a bike",
+            parameters: ToolParameters(
+                properties: [
+                    "radius_m": ParameterProperty(type: "number", description: "Search radius in meters (default 500)"),
+                    "limit": ParameterProperty(type: "number", description: "Maximum stations to return (default 5)"),
+                    "min_docks": ParameterProperty(type: "number", description: "Minimum docks required (default 1)"),
+                    "lat": ParameterProperty(type: "number", description: "Override latitude (optional)"),
+                    "lon": ParameterProperty(type: "number", description: "Override longitude (optional)")
+                ],
+                required: []
+            )
+        )
+    }
+    
+    private static func getStationAvailabilityTool() -> RealtimeToolDefinition {
+        return RealtimeToolDefinition(
+            name: "station_availability",
+            description: "Get live availability for a Citi Bike station by ID",
+            parameters: ToolParameters(
+                properties: [
+                    "station_id": ParameterProperty(type: "string", description: "Citi Bike station identifier"),
+                    "reference_lat": ParameterProperty(type: "number", description: "Reference latitude to compute distance (optional)"),
+                    "reference_lon": ParameterProperty(type: "number", description: "Reference longitude to compute distance (optional)")
+                ],
+                required: ["station_id"]
+            )
+        )
+    }
+    
+    private static func getTypeBreakdownTool() -> RealtimeToolDefinition {
+        return RealtimeToolDefinition(
+            name: "type_breakdown_nearby",
+            description: "Summarize classic bikes, e-bikes, and docks near the current location",
+            parameters: ToolParameters(
+                properties: [
+                    "radius_m": ParameterProperty(type: "number", description: "Radius in meters (default 500)"),
+                    "lat": ParameterProperty(type: "number", description: "Override latitude (optional)"),
+                    "lon": ParameterProperty(type: "number", description: "Override longitude (optional)")
+                ],
+                required: []
+            )
+        )
+    }
+    
+    private static func getParkingNearDestinationTool() -> RealtimeToolDefinition {
+        return RealtimeToolDefinition(
+            name: "parking_near_destination",
+            description: "Find docking stations near a specified destination coordinate",
+            parameters: ToolParameters(
+                properties: [
+                    "lat": ParameterProperty(type: "number", description: "Destination latitude"),
+                    "lon": ParameterProperty(type: "number", description: "Destination longitude"),
+                    "radius_m": ParameterProperty(type: "number", description: "Search radius in meters (default 500)"),
+                    "limit": ParameterProperty(type: "number", description: "Maximum stations (default 5)"),
+                    "min_docks": ParameterProperty(type: "number", description: "Minimum docks required (default 1)")
+                ],
+                required: ["lat", "lon"]
+            )
+        )
+    }
+    
     // MARK: - Tool Execution
     
     func executeTool(name: String, parameters: [String: Any]) async -> ToolResult {
@@ -595,6 +682,13 @@ class RealtimeToolManager: ObservableObject {
             
         case "find_nearby_services":
             return await executeFindNearbyServices(parameters: parameters)
+        
+        case "bikes_nearby",
+             "docks_nearby",
+             "station_availability",
+             "type_breakdown_nearby",
+             "parking_near_destination":
+            return unsupportedLegacyTool(name: name)
             
         case "web_search":
             return await executeWebSearch(parameters: parameters)
@@ -1036,6 +1130,11 @@ class RealtimeToolManager: ObservableObject {
         }
         
         return formatted
+    }
+    
+    private func unsupportedLegacyTool(name: String) -> ToolResult {
+        let message = "Tool '\(name)' is only available via the MCP bikeshare integration."
+        return ToolResult(success: false, data: message)
     }
 }
 
