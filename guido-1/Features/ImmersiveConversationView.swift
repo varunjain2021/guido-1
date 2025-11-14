@@ -61,7 +61,7 @@ struct ImmersiveConversationView: View {
             // Removed test overlay; theme selection is in Settings
             
             // Connection controls in center when not connected (only after auth)
-            if appState.authStatus.isAuthenticated && !realtimeService.isConnected && !showSettings {
+            if appState.authStatus.isAuthenticated && !realtimeService.isConnected && !showSettings && !appState.onboarding.isVisible {
                 centeredLiquidGlassButton
             }
             
@@ -87,7 +87,7 @@ struct ImmersiveConversationView: View {
             }
 
             // Settings bubble (top-right) when authenticated
-            if appState.authStatus.isAuthenticated {
+            if appState.authStatus.isAuthenticated && !appState.onboarding.isVisible {
                 VStack {
                     HStack {
                         Spacer()
@@ -107,13 +107,25 @@ struct ImmersiveConversationView: View {
                 }
             }
 
-            // Inline settings panel with tap-blocking backdrop
-            if appState.authStatus.isAuthenticated && showSettings {
+            // Inline settings panel with tap-blocking backdrop (never render if onboarding is visible)
+            if appState.authStatus.isAuthenticated && showSettings && !appState.onboarding.isVisible {
                 ZStack {
                     Color.black.opacity(0.0001)
                         .ignoresSafeArea()
                         .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { showSettings = false } }
-                    SettingsView()
+                    SettingsView(
+                        onClose: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showSettings = false
+                            }
+                        },
+                        onHelp: {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                showSettings = false
+                            }
+                            appState.onboarding.presentOnboarding(mode: .help)
+                        }
+                    )
                         .environmentObject(appState)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
@@ -124,14 +136,40 @@ struct ImmersiveConversationView: View {
             if appState.authStatus.isAuthenticated == false {
                 ZStack {
                     Color.clear.ignoresSafeArea()
-                    OnboardingView()
+                    AuthenticationView()
                         .environmentObject(appState)
                         .transition(.opacity)
                 }
                 .zIndex(10)
             }
+
+            if appState.onboarding.isVisible {
+                OnboardingCardsView(
+                    onboarding: appState.onboarding,
+                    locationManager: appState.locationManager,
+                    notificationService: NotificationService.shared
+                )
+                .environmentObject(appState)
+                .transition(.opacity)
+                .zIndex(40)
+            }
         }
         .navigationBarHidden(true)
+        // Ensure Settings never stays open underneath onboarding or across auth transitions
+        .onChange(of: appState.onboarding.isVisible) { visible in
+            if visible {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showSettings = false
+                }
+            }
+        }
+        .onChange(of: appState.authStatus.user?.id) { _ in
+            if showSettings {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showSettings = false
+                }
+            }
+        }
         .onReceive(realtimeService.$isConnected) { isConnected in
             if isConnected {
                 isConnecting = false

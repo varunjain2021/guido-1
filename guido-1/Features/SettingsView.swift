@@ -7,6 +7,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
+    var onClose: () -> Void = {}
+    var onHelp: () -> Void = {}
     
     var body: some View {
         ZStack {
@@ -112,6 +114,24 @@ struct SettingsView: View {
                                 }
                             }
                         }
+                        
+                        Divider().opacity(0.3)
+                        Button(action: {
+                            onClose()
+                            onHelp()
+                        }) {
+                            HStack {
+                                Text("Help")
+                                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                    .foregroundColor(Color(.secondaryLabel))
+                                Spacer()
+                                Image(systemName: "questionmark.circle")
+                            }
+                            .foregroundColor(Color(.secondaryLabel))
+                            .padding(.vertical, 8)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(PlainButtonStyle())
                         
                         Divider().opacity(0.3)
                         Button(action: { Task { await appState.signOut() } }) {

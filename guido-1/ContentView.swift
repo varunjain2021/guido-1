@@ -57,6 +57,10 @@ struct ContentView: View {
         .navigationViewStyle(StackNavigationViewStyle())
         .onAppear {
             appState.locationManager.requestLocationPermission()
+            evaluateOnboarding(for: appState.authStatus.user?.id)
+        }
+        .onChange(of: appState.authStatus.user?.id) { newId in
+            evaluateOnboarding(for: newId)
         }
     }
     
@@ -107,6 +111,13 @@ struct ContentView: View {
             withAnimation(.easeInOut(duration: 0.3)) {
                 selectedExperience = experience
             }
+        }
+    }
+    
+    private func evaluateOnboarding(for userId: String?) {
+        guard let userId else { return }
+        if appState.onboarding.needsOnboarding(for: userId) {
+            appState.onboarding.presentOnboarding(mode: .firstRun)
         }
     }
 }
