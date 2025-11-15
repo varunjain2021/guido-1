@@ -336,6 +336,12 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     
     // Preferred conversation language (ISO-639-1), defaults to English
     private(set) var preferredLanguageCode: String = "en"
+    private(set) var defaultVoice: String = "marin"
+    
+    private enum Constants {
+        static let realtimeModelName = "gpt-realtime-2025-08-28"
+        static let audioSampleRate = 24_000
+    }
     
     init(apiKey: String) {
         self.apiKey = apiKey
@@ -353,6 +359,12 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         Task {
             await sendLanguageUpdateOverDataChannel()
         }
+    }
+
+    func setDefaultVoice(_ voice: String) {
+        let normalized = voice.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return }
+        defaultVoice = normalized
     }
 
     func setEventSender(_ sender: WebRTCEventSender) {
@@ -647,7 +659,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             let body = String(data: data, encoding: .utf8) ?? ""
             return (body, status, model)
         }
-        let result = try await exchange(model: "gpt-realtime")
+        let result = try await exchange(model: Constants.realtimeModelName)
         guard result.1 == 200 else {
             let message = "Failed to exchange SDP for model=\(result.2) status=\(result.1) body=\(result.0)"
             print("🚨 [WebRTC] \(message)")
@@ -663,19 +675,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     private func configureSessionOverDataChannel() async throws {
         // Build same payload as configureSession(), but send over data channel
         let eventId = UUID().uuidString
-        let vadType = VADConfig.useSemanticVAD ? "semantic_vad" : "server_vad"
-        var turnDetection: [String: Any] = [
-            "type": vadType,
-            "create_response": true,
-            "interrupt_response": true
-        ]
-        if !VADConfig.useSemanticVAD {
-            turnDetection["threshold"] = VADConfig.serverThreshold
-            turnDetection["prefix_padding_ms"] = VADConfig.serverPrefixPadding
-            turnDetection["silence_duration_ms"] = VADConfig.serverSilenceDuration
-        } else {
-            turnDetection["eagerness"] = VADConfig.semanticEagerness
-        }
+        let turnDetection = makeTurnDetectionPayload()
         let toolsArray: [[String: Any]] = {
             do {
                 let defs = MCPToolCoordinator.getAllToolDefinitions()
@@ -691,7 +691,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             "input_audio_transcription": [
                 "model": "whisper-1",
                 "language": preferredLanguageCode
-            ]
+            ],
+            "turn_detection": turnDetection
         ]
         let payload: [String: Any] = [
             "type": "session.update",
@@ -721,6 +722,22 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         if sentImmediately {
             print("🔧 [WebRTC] Updated transcription language → \(preferredLanguageCode)")
         }
+    }
+    
+    private func makeTurnDetectionPayload() -> [String: Any] {
+        var turnDetection: [String: Any] = [
+            "type": VADConfig.useSemanticVAD ? "semantic_vad" : "server_vad",
+            "create_response": true,
+            "interrupt_response": true
+        ]
+        if VADConfig.useSemanticVAD {
+            turnDetection["eagerness"] = VADConfig.semanticEagerness
+        } else {
+            turnDetection["threshold"] = VADConfig.serverThreshold
+            turnDetection["prefix_padding_ms"] = VADConfig.serverPrefixPadding
+            turnDetection["silence_duration_ms"] = VADConfig.serverSilenceDuration
+        }
+        return turnDetection
     }
     
     private func sendClearInputBuffer() async {
@@ -870,14 +887,31 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        // Provide minimal session seed per docs if desired; keep server defaults otherwise
-        let requestBody: [String: Any] = [
-            "session": [
-                "type": "realtime",
-            "model": "gpt-realtime",
-                "instructions": "You are Guido, a helpful travel companion."
+        let audioFormat: [String: Any] = [
+            "type": "audio/pcm",
+            "rate": Constants.audioSampleRate
+        ]
+        let sessionBody: [String: Any] = [
+            "type": "realtime",
+            "model": Constants.realtimeModelName,
+            "modalities": ["text", "audio"],
+            "instructions": realtimeSystemInstructions(),
+            "audio": [
+                "input": [
+                    "format": audioFormat,
+                    "turn_detection": makeTurnDetectionPayload()
+                ],
+                "output": [
+                    "format": audioFormat,
+                    "voice": "marin"
+                ]
+            ],
+            "input_audio_transcription": [
+                "model": "whisper-1",
+                "language": preferredLanguageCode
             ]
         ]
+        let requestBody: [String: Any] = ["session": sessionBody]
         
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
@@ -1717,7 +1751,13 @@ extension OpenAIRealtimeService {
     
     func realtimeSystemInstructions() -> String {
         let rulesText = NavigationRulesProvider.loadRulesText()
-        let languageHint = preferredLanguageCode.lowercased() == "en" ? "" : "\nRespond in \(preferredLanguageCode.uppercased()) unless the user requests another language."
+        let languageName = languageDisplayName(for: preferredLanguageCode)
+        let languageGuidance = """
+LANGUAGE PREFERENCE (STRICT):
+- The traveler’s preferred language is \(languageName) (\(preferredLanguageCode.uppercased())).
+- Always respond only in \(languageName) unless the user explicitly asks you to translate or switch languages.
+- Do not mirror or mix in other languages even if their input includes fragments in other languages unless they clearly request it.
+"""
         return """
                 You are Guido, a helpful, upbeat and conversational AI travel companion with access to real-time tools and location data. You're designed to have natural, flowing conversations about travel while providing personalized, location-aware assistance.
                 
@@ -1739,6 +1779,8 @@ extension OpenAIRealtimeService {
                 - Offer specific, actionable suggestions based on real data
                 - ALWAYS briefly acknowledge before using tools with phrases like "let me check that for you", "let me find that information", or "give me a moment to look that up" - this provides important user feedback during processing
                 - After using tools and getting results, naturally transition into sharing the information without additional artificial completion sounds
+                
+                \(languageGuidance)
                 
                 BIKESHARE AVAILABILITY STYLE (STRICT):
                 - Summarize naturally: "Closest is [Station] (~1–2 min walk): 8 e-bikes, 23 total bikes, 12 docks."
@@ -1781,7 +1823,6 @@ extension OpenAIRealtimeService {
                 - Use precise coordinates and map geometry to validate each step. Favor sidewalks, marked paths, and official entrances; avoid routing through building interiors, water, highways, or closed areas.
                 - Before giving the next step, prefer calling tools (get_user_location, get_directions, find_nearby_landmarks/places/transport) to fetch specific named anchors and entrance points.
                 - If the user is against a wall or obstacle, verify with map data (building footprint, sidewalk network, park boundaries), then guide along the open sidewalk to the nearest corner or entrance. Confirm anchors before proceeding.
-                \(languageHint)
                 """
     }
     

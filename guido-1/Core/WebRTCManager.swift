@@ -33,9 +33,8 @@ class WebRTCManager: NSObject, ObservableObject {
     private var conversationMap: [String : ConversationItem] = [:]
     
     // Model & session config
-    private var modelName: String = "gpt-realtime"
+    private var modelName: String = "gpt-realtime-2025-08-28"
     private var systemInstructions: String = ""
-    private var voice: String = "marin"
     
     // WebRTC references
     private var peerConnection: RTCPeerConnection?
@@ -55,8 +54,7 @@ class WebRTCManager: NSObject, ObservableObject {
     func startConnection(
         apiKey: String,
         modelName: String,
-        systemMessage: String,
-        voice: String
+        systemMessage: String
     ) {
         conversation.removeAll()
         conversationMap.removeAll()
@@ -64,7 +62,6 @@ class WebRTCManager: NSObject, ObservableObject {
         // Store updated config
         self.modelName = modelName
         self.systemInstructions = systemMessage
-        self.voice = voice
         
         setupPeerConnection()
         setupLocalAudio()

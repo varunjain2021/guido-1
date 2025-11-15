@@ -313,13 +313,13 @@ struct ImmersiveConversationView: View {
         
         // Safety: ensure LocationManager is wired just before starting
         realtimeService.setLocationManager(locationManager)
+        realtimeService.setDefaultVoice("marin")
         
         // Use WebRTCManager for voice transport; reuse existing instructions/tools
         webrtcManager.startConnection(
             apiKey: openAIAPIKey,
-            modelName: "gpt-realtime",
-            systemMessage: realtimeService.realtimeSystemInstructions(),
-            voice: "marin"
+            modelName: "gpt-realtime-2025-08-28",
+            systemMessage: realtimeService.realtimeSystemInstructions()
         )
         print("🌟 Immersive conversation started (WebRTC)")
     }
