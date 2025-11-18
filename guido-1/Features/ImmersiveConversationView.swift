@@ -10,6 +10,7 @@ import CoreLocation
 
 struct ImmersiveConversationView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var voiceprintManager: VoiceprintManager
     @StateObject private var realtimeService: OpenAIRealtimeService
     @StateObject private var webrtcManager = WebRTCManager()
     @StateObject private var locationManager = LocationManager()
@@ -29,6 +30,7 @@ struct ImmersiveConversationView: View {
     @State private var guidoSpeaking = false
     @State private var audioLevel: Float = 0.0
     @State private var showSettings = false
+    @State private var hasPromptedVoiceprint = false
     
     // Theme is now managed via Settings (AppState.selectedTheme)
     
@@ -191,6 +193,21 @@ struct ImmersiveConversationView: View {
         }
         .onReceive(realtimeService.$audioLevel) { level in
             audioLevel = level
+        }
+        .onReceive(voiceprintManager.$status) { status in
+            switch status {
+            case .available:
+                hasPromptedVoiceprint = false
+            case .missing:
+                if appState.authStatus.isAuthenticated,
+                   !appState.onboarding.isVisible,
+                   !hasPromptedVoiceprint {
+                    appState.onboarding.presentOnboarding(mode: .help)
+                    hasPromptedVoiceprint = true
+                }
+            default:
+                break
+            }
         }
         .onReceive(realtimeService.$conversation) { conversation in
             processLatestResponse(from: conversation)

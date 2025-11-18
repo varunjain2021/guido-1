@@ -9,9 +9,11 @@ import UIKit
 
 struct OnboardingCardsView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var voiceprintManager: VoiceprintManager
     @ObservedObject private var onboarding: OnboardingController
     @ObservedObject private var locationManager: LocationManager
     @ObservedObject private var notificationService: NotificationService
+    @StateObject private var voiceprintViewModel = VoiceprintEnrollmentViewModel()
     
     @State private var selection: Int = 0
     @State private var selectedCapability: Capability?
@@ -20,6 +22,7 @@ struct OnboardingCardsView: View {
     @State private var isDismissing: Bool = false
     @State private var hasAppeared: Bool = false
     @State private var gridContentHeight: CGFloat = 0
+    @State private var voiceprintCompleted: Bool = false
     
     private let impactGenerator = UIImpactFeedbackGenerator(style: .light)
     
@@ -55,6 +58,7 @@ struct OnboardingCardsView: View {
             withAnimation(.easeInOut(duration: 0.25)) {
                 selection = 0
             }
+            voiceprintCompleted = voiceprintManager.hasVoiceprint
             if selectedCapability == nil {
                 selectedCapability = capabilities.first
             }
@@ -75,6 +79,15 @@ struct OnboardingCardsView: View {
         .onReceive(notificationService.$authorizationStatus) { status in
             notificationStatus = status
         }
+        .onReceive(voiceprintManager.$status) { status in
+            switch status {
+            case .available:
+                voiceprintCompleted = true
+            default:
+                voiceprintCompleted = false
+            }
+            clampSelectionIfNeeded()
+        }
     }
     
     private var header: some View {
@@ -90,6 +103,9 @@ struct OnboardingCardsView: View {
             card1.tag(0)
             card2.tag(1)
             card3.tag(2)
+            if voiceprintRequired {
+                voiceprintCard.tag(3)
+            }
         }
         .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
         .padding(.horizontal, 18)
@@ -111,6 +127,7 @@ struct OnboardingCardsView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(selection == totalPages - 1 ? "Finish onboarding" : "Next onboarding card")
+                .disabled(nextButtonDisabled)
             }
             LiquidGlassCard(intensity: 0.6, cornerRadius: 14, shadowIntensity: 0.14) {
                 Button(action: skip) {
@@ -125,6 +142,7 @@ struct OnboardingCardsView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Skip onboarding")
+                .disabled(skipDisabled)
             }
         }
     }
@@ -355,6 +373,19 @@ struct OnboardingCardsView: View {
         .animation(nil, value: selectedCapability?.title)
     }
     
+    private var voiceprintCard: some View {
+        VoiceprintCardView(
+            step: totalPages,
+            totalSteps: totalPages,
+            viewModel: voiceprintViewModel,
+            onCompletion: {
+                voiceprintCompleted = true
+                clampSelectionIfNeeded()
+            }
+        )
+        .environmentObject(voiceprintManager)
+    }
+    
     private func permissionActionButton(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
         LiquidGlassCard(intensity: 0.5, cornerRadius: 14, shadowIntensity: 0.12) {
             Button(action: action) {
@@ -391,7 +422,9 @@ struct OnboardingCardsView: View {
         .frame(height: 52)
     }
     
-    private let totalPages = 3
+    private var totalPages: Int {
+        voiceprintRequired ? 4 : 3
+    }
 
     private var capabilities: [Capability] {
         [
@@ -508,6 +541,25 @@ struct OnboardingCardsView: View {
                 examples: ["Local emergency numbers", "Any current advisories?", "Nearest hospital or clinic"]
             )
         ]
+    }
+
+    private var voiceprintRequired: Bool {
+        !voiceprintCompleted
+    }
+
+    private var nextButtonDisabled: Bool {
+        voiceprintRequired && selection == totalPages - 1 && !voiceprintCompleted
+    }
+
+    private var skipDisabled: Bool {
+        voiceprintRequired && !voiceprintCompleted
+    }
+
+    private func clampSelectionIfNeeded() {
+        let maxIndex = max(totalPages - 1, 0)
+        if selection > maxIndex {
+            selection = maxIndex
+        }
     }
 
     private var greeting: String {
@@ -660,6 +712,10 @@ struct OnboardingCardsView: View {
     }
     
     private func complete() {
+        guard !voiceprintRequired || voiceprintCompleted else {
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            return
+        }
         impactGenerator.impactOccurred()
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         withAnimation(.easeOut(duration: 0.18)) {
@@ -673,7 +729,7 @@ struct OnboardingCardsView: View {
     }
 }
 
-private struct OnboardingTitle: View {
+struct OnboardingTitle: View {
     let iconName: String
     let iconTint: Color
     let title: String

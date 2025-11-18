@@ -54,6 +54,7 @@ class AppState: ObservableObject {
     @Published var showRealtimeConversation = false
     @Published var authStatus: AuthStatus = AuthStatus(isAuthenticated: false, user: nil)
     @Published var onboarding = OnboardingController()
+    let voiceprintManager = VoiceprintManager.shared
     
     // UI Theme (Canvas)
     @Published var selectedTheme: CanvasEnvironment = .water
@@ -105,6 +106,7 @@ class AppState: ObservableObject {
         if let supaAuth = authService as? SupabaseAuthService {
             self.profileService = SupabaseProfileService(auth: supaAuth)
         }
+        voiceprintManager.configure(profileService: profileService, authService: authService)
 
         // Read current auth status
         Task { [weak self] in
@@ -119,6 +121,7 @@ class AppState: ObservableObject {
         do {
             try await authService.signIn(email: email, password: password)
             self.authStatus = await authService.currentStatus()
+            await voiceprintManager.refreshFromRemote()
             return .success(())
         } catch {
             return .failure(error)
@@ -132,6 +135,7 @@ class AppState: ObservableObject {
             if let profileService, let user = authStatus.user {
                 await profileService.upsertCurrentUserProfile(firstName: user.firstName, lastName: user.lastName, email: user.email)
             }
+            await voiceprintManager.refreshFromRemote()
             return .success(())
         } catch {
             return .failure(error)
@@ -156,6 +160,7 @@ class AppState: ObservableObject {
             if let profileService, let user = authStatus.user {
                 await profileService.upsertCurrentUserProfile(firstName: user.firstName, lastName: user.lastName, email: user.email)
             }
+            await voiceprintManager.refreshFromRemote()
             return .success(())
         } catch {
             return .failure(error)
@@ -169,6 +174,7 @@ class AppState: ObservableObject {
             // Ignore for now
         }
         self.authStatus = await authService.currentStatus()
+        voiceprintManager.requireVoiceprint()
     }
     
     var currentUserId: String? {

@@ -275,6 +275,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     private var lastToolStartTime: TimeInterval = 0
     private var openAIChatService: OpenAIChatService?
     private var discoveryEngine: DiscoveryEngine?
+    private var voiceprintObservationTask: Task<Void, Never>?
     // Lightweight in-memory speaker gate (temporary evaluation)
     private var speakerVerifier = SimpleSpeakerVerifier()
     private var speakerGateEnabled = true
@@ -348,6 +349,21 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         super.init()
         setupAudioSession()
         print("🚀 OpenAI Realtime Service initialized")
+        voiceprintObservationTask = Task { [weak self] in
+            let manager = VoiceprintManager.shared
+            if let payload = manager.currentPayload() {
+                await self?.applyStoredVoiceprint(payload)
+            }
+            for await status in manager.$status.values {
+                if case .available(let payload) = status {
+                    await self?.applyStoredVoiceprint(payload)
+                }
+            }
+        }
+    }
+    
+    deinit {
+        voiceprintObservationTask?.cancel()
     }
     
     func setPreferredLanguageCode(_ code: String) {
@@ -1383,21 +1399,21 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         guard speakerGateEnabled, speakerVerifier.enrolled.isEmpty else { return }
         Task {
             // Slightly larger enrollment window for stability
-            let s = await AudioSnippets.recordMonoFloat32(seconds: 3.0, sampleRate: 16000)
-            if s.count > 16000 { // ~1s minimum
+            let snippet = await AudioSnippets.recordMonoFloat32(seconds: 3.0, sampleRate: 16000)
+            if snippet.samples.count > 16000 { // ~1s minimum
                 var v = speakerVerifier
-                v.enroll(from: s)
+                v.enroll(from: snippet.samples)
                 speakerVerifier = v
-                print("🔒 [Voiceprint] Enrolled temporary in-memory voiceprint (frames=\(s.count))")
+                print("🔒 [Voiceprint] Enrolled temporary in-memory voiceprint (frames=\(snippet.samples.count))")
             } else {
-                print("⚠️ [Voiceprint] Enrollment sample too short (frames=\(s.count))")
+                print("⚠️ [Voiceprint] Enrollment sample too short (frames=\(snippet.samples.count))")
             }
         }
     }
     
     private func passesSpeakerGateQuickCheck() async -> Bool {
-        let s = await AudioSnippets.recordMonoFloat32(seconds: 0.7, sampleRate: 16000)
-        if s.isEmpty {
+        let snippet = await AudioSnippets.recordMonoFloat32(seconds: 0.7, sampleRate: 16000)
+        if snippet.samples.isEmpty {
             print("⚠️ [Voiceprint] Snippet capture failed; allowing utterance (fail-open)")
             return true // fail-open if capture not available
         }
@@ -1406,10 +1422,17 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             return true
         }
         let threshold: Float = 0.80
-        let sim = speakerVerifier.similarity(samples: s)
+        let sim = speakerVerifier.similarity(samples: snippet.samples)
         let pass = sim >= threshold
-        print("\(pass ? "✅" : "❌") [Voiceprint] similarity=\(String(format: "%.3f", sim)) threshold=\(threshold) frames=\(s.count)")
+        print("\(pass ? "✅" : "❌") [Voiceprint] similarity=\(String(format: "%.3f", sim)) threshold=\(threshold) frames=\(snippet.samples.count)")
         return pass
+    }
+    
+    func applyStoredVoiceprint(_ payload: VoiceprintPayload) {
+        var verifier = speakerVerifier
+        verifier.applyStoredVoiceprint(vector: payload.vector)
+        speakerVerifier = verifier
+        print("📝 [Voiceprint] Loaded stored voiceprint version \(payload.metadata.version)")
     }
     
     // handleAudioDelta removed in WebRTC mode

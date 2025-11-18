@@ -14,6 +14,15 @@ struct SimpleSpeakerVerifier {
 	mutating func enroll(from samples: [Float]) {
 		enrolled = normalize(fingerprint(samples))
 	}
+
+	mutating func applyStoredVoiceprint(vector: [Double]) {
+		enrolled = vector.map { Float($0) }
+	}
+
+	func exportVoiceprint() -> [Double]? {
+		return enrolled.isEmpty ? nil : enrolled.map { Double($0) }
+	}
+
 	
 	func isLikelySameSpeaker(samples: [Float], threshold: Float = 0.80) -> Bool {
 		guard !enrolled.isEmpty else { return true } // pass-through if not enrolled

@@ -16,6 +16,7 @@ struct guido_1App: App {
         WindowGroup {
             ContentView()
                 .environmentObject(appState)
+                .environmentObject(appState.voiceprintManager)
                 .onOpenURL { url in
                     handleDeepLink(url)
                     Task { await appState.authService.handleOpenURL(url) }
