@@ -83,6 +83,10 @@ struct OnboardingCardsView: View {
             switch status {
             case .available:
                 voiceprintCompleted = true
+                // Auto-dismiss only during first run
+                if onboarding.mode == .firstRun {
+                    complete()
+                }
             default:
                 voiceprintCompleted = false
             }
@@ -103,7 +107,7 @@ struct OnboardingCardsView: View {
             card1.tag(0)
             card2.tag(1)
             card3.tag(2)
-            if voiceprintRequired {
+            if showVoiceprintCard {
                 voiceprintCard.tag(3)
             }
         }
@@ -378,6 +382,7 @@ struct OnboardingCardsView: View {
             step: totalPages,
             totalSteps: totalPages,
             viewModel: voiceprintViewModel,
+            allowRegenerate: onboarding.mode == .help,
             onCompletion: {
                 voiceprintCompleted = true
                 clampSelectionIfNeeded()
@@ -422,8 +427,12 @@ struct OnboardingCardsView: View {
         .frame(height: 52)
     }
     
+    private var showVoiceprintCard: Bool {
+        onboarding.mode == .help || voiceprintRequired
+    }
+    
     private var totalPages: Int {
-        voiceprintRequired ? 4 : 3
+        showVoiceprintCard ? 4 : 3
     }
 
     private var capabilities: [Capability] {
@@ -548,11 +557,19 @@ struct OnboardingCardsView: View {
     }
 
     private var nextButtonDisabled: Bool {
-        voiceprintRequired && selection == totalPages - 1 && !voiceprintCompleted
+        if onboarding.mode == .help { return false }
+        if voiceprintRequired && selection == totalPages - 1 {
+            // Disable if saving or not enough phrases; allow when completed
+            if voiceprintCompleted { return false }
+            if voiceprintViewModel.isSaving { return true }
+            return voiceprintViewModel.recordedCount < voiceprintViewModel.totalPrompts
+        }
+        return false
     }
 
     private var skipDisabled: Bool {
-        voiceprintRequired && !voiceprintCompleted
+        // Allow skip to dismiss onboarding even if voiceprint is missing
+        false
     }
 
     private func clampSelectionIfNeeded() {
@@ -712,7 +729,14 @@ struct OnboardingCardsView: View {
     }
     
     private func complete() {
-        guard !voiceprintRequired || voiceprintCompleted else {
+        // Allow completion if voiceprint is present OR not required,
+        // OR user has finished recording required phrases and we're not saving anymore.
+        let canDismiss: Bool = !voiceprintRequired
+            || voiceprintCompleted
+            || (selection == totalPages - 1
+                && voiceprintViewModel.recordedCount >= voiceprintViewModel.totalPrompts
+                && !voiceprintViewModel.isSaving)
+        guard canDismiss else {
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
             return
         }

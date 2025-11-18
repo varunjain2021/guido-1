@@ -17,18 +17,20 @@ final class VoiceprintEnrollmentViewModel: ObservableObject {
     
     @Published var quietState: QuietState = .idle
     @Published var isRecordingPhrase = false
+    @Published var recordProgress: Double = 0
     @Published var isSaving = false
     @Published var recordedCount = 0
     @Published var errorMessage: String?
+    @Published var lastQualityHint: String?
+    @Published var isCountdownActive = false
+    @Published var countdownRemaining: Int = 0
     
     private let prompts = [
         "Hey Guido, where am I?",
-        "What's the best dessert spot near me?",
-        "Are there any available e-bikes nearby?",
-        "Can you read menus nearby and tell me about gluten-free options?"
+        "What's the best dessert spot near me?"
     ]
     
-    private let maxPhrases = 3
+    private let maxPhrases = 2
     private let service: VoiceprintService
     private let manager: VoiceprintManager
     private var phraseSnippets: [AudioSnippet] = []
@@ -66,19 +68,49 @@ final class VoiceprintEnrollmentViewModel: ObservableObject {
     
     func recordNextPhrase() {
         guard quietCheckPassed, recordedCount < maxPhrases, !isRecordingPhrase else { return }
-        isRecordingPhrase = true
+        isCountdownActive = true
+        countdownRemaining = 3
+        isRecordingPhrase = false
+        recordProgress = 0
         errorMessage = nil
+        lastQualityHint = nil
         Task {
-            let snippet = await service.recordPhrase()
+            for k in (1...3).reversed() {
+                await MainActor.run { self.countdownRemaining = k }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+            await MainActor.run {
+                self.isCountdownActive = false
+                self.isRecordingPhrase = true
+            }
+            // Start capture and progress concurrently so users speak during the actual recording window
+            let uiDuration: TimeInterval = 3.0
+            let startedAt = Date()
+            async let snippetAsync: AudioSnippet = service.recordPhrase()
+            // Drive a smooth progress bar while recording is in-flight
+            while true {
+                let elapsed = Date().timeIntervalSince(startedAt)
+                await MainActor.run { self.recordProgress = min(1.0, elapsed / uiDuration) }
+                if elapsed >= uiDuration { break }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            let snippet = await snippetAsync
             await MainActor.run {
                 self.isRecordingPhrase = false
+                self.recordProgress = 1
                 if snippet.samples.isEmpty {
                     self.errorMessage = "Couldn't hear anything—try again."
                 } else {
-                    self.phraseSnippets.append(snippet)
-                    self.recordedCount = min(self.recordedCount + 1, self.maxPhrases)
-                    if self.recordedCount == self.maxPhrases {
-                        self.finalizeVoiceprint()
+                    let quality = self.service.evaluateSpeechQuality(snippet: snippet)
+                    if !quality.isAcceptable {
+                        self.errorMessage = quality.reason ?? "Please try again."
+                        self.lastQualityHint = "Spoken \(String(format: "%.0f%%", quality.voicedFraction * 100)), duration \(String(format: "%.1fs", quality.duration))"
+                    } else {
+                        self.phraseSnippets.append(snippet)
+                        self.recordedCount = min(self.recordedCount + 1, self.maxPhrases)
+                        if self.recordedCount == self.maxPhrases {
+                            self.finalizeVoiceprint()
+                        }
                     }
                 }
             }
@@ -111,6 +143,7 @@ struct VoiceprintCardView: View {
     let step: Int
     let totalSteps: Int
     @ObservedObject var viewModel: VoiceprintEnrollmentViewModel
+    let allowRegenerate: Bool
     var onCompletion: () -> Void
     
     @EnvironmentObject private var voiceprintManager: VoiceprintManager
@@ -141,12 +174,13 @@ struct VoiceprintCardView: View {
     }
     
     private var content: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            quietSection
-            Divider().opacity(0.2)
-            phraseSection
-            Divider().opacity(0.2)
-            privacySection
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
+                quietSection
+                Divider().opacity(0.2)
+                phraseSection
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
     
@@ -182,21 +216,76 @@ struct VoiceprintCardView: View {
     
     private var phraseSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("2. Record 3 sample requests")
+            Text("2. Record 2 sample requests")
                 .font(.system(size: 15, weight: .bold, design: .rounded))
-            Text("Say each phrase naturally. This stays private and only becomes a lightweight fingerprint.")
-                .font(.system(size: 13, weight: .regular, design: .rounded))
-                .foregroundColor(.secondary)
+            // Dynamic status panel
+            VStack(alignment: .leading, spacing: 8) {
+                if viewModel.isCountdownActive {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.orange.opacity(0.15))
+                                .frame(width: 30, height: 30)
+                            Text("\(viewModel.countdownRemaining)")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .foregroundColor(.orange)
+                        }
+                        Text("Get ready…")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                HStack(spacing: 8) {
+                    Image(systemName: viewModel.isRecordingPhrase ? "waveform.circle.fill" : "mic.circle")
+                        .foregroundColor(viewModel.isRecordingPhrase ? .red : .blue)
+                    Text(viewModel.isRecordingPhrase ? "Listening… say: \(examplePrompt(at: viewModel.recordedCount))" : "Next up: \(examplePrompt(at: viewModel.recordedCount))")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if viewModel.isRecordingPhrase {
+                    ProgressView(value: viewModel.recordProgress)
+                        .progressViewStyle(.linear)
+                }
+            }
+            .padding(10)
+            .background(Color.blue.opacity(0.08))
+            .cornerRadius(10)
+            
+            // Checklist
             ForEach(0..<viewModel.totalPrompts, id: \.self) { index in
                 HStack(spacing: 8) {
                     Image(systemName: index < viewModel.recordedCount ? "checkmark.circle.fill" : "circle")
                         .foregroundColor(index < viewModel.recordedCount ? .green : Color(.tertiaryLabel))
-                    Text(examplePrompt(at: index))
-                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                    // Avoid duplicating the current prompt; show phrases only for completed items
+                    if index < viewModel.recordedCount {
+                        Text(examplePrompt(at: index))
+                            .font(.system(size: 13, weight: .regular, design: .rounded))
+                            .foregroundColor(.secondary)
+                    } else if index != viewModel.recordedCount {
+                        Text("Pending")
+                            .font(.system(size: 13, weight: .regular, design: .rounded))
+                            .foregroundColor(Color(.tertiaryLabel))
+                    } else {
+                        // Current prompt is already shown above as "Next up", keep this row minimal
+                        Text("Now")
+                            .font(.system(size: 13, weight: .regular, design: .rounded))
+                            .foregroundColor(Color(.tertiaryLabel))
+                    }
+                }
+            }
+            // Compact two-line status (adapts on success/failure)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(primaryStatusText)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundColor(primaryStatusColor)
+                if let secondary = secondaryStatusText, !secondary.isEmpty {
+                    Text(secondary)
+                        .font(.system(size: 12, weight: .regular, design: .rounded))
                         .foregroundColor(.secondary)
                 }
             }
-            if !voiceprintManager.hasVoiceprint {
+            if !voiceprintManager.hasVoiceprint || allowRegenerate {
                 if viewModel.isSaving {
                     ProgressView("Saving voiceprint…")
                         .font(.system(size: 13, weight: .semibold))
@@ -207,26 +296,49 @@ struct VoiceprintCardView: View {
                     primaryButton("Record phrase \(viewModel.recordedCount + 1) of \(viewModel.totalPrompts)", action: viewModel.recordNextPhrase)
                         .disabled(!viewModel.quietCheckPassed)
                         .opacity(viewModel.quietCheckPassed ? 1 : 0.5)
+                } else if allowRegenerate && viewModel.recordedCount >= viewModel.totalPrompts && !viewModel.isSaving {
+                    // Offer to restart if user wants to regenerate again
+                    primaryButton("Start over", action: viewModel.reset)
+                }
+                if allowRegenerate && voiceprintManager.hasVoiceprint {
+                    Text("Regenerating will replace your existing voiceprint.")
+                        .font(.system(size: 12, weight: .regular, design: .rounded))
+                        .foregroundColor(.secondary)
                 }
             } else {
                 completionBadge
             }
-            if let error = viewModel.errorMessage {
-                Text(error)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundColor(.orange)
-            }
+            // Error details folded into compact status lines above
         }
     }
     
-    private var privacySection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Your voiceprint isn’t raw audio.")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-            Text("We store a short fingerprint (numbers only) with row-level security. You can regenerate it anytime.")
-                .font(.system(size: 12, weight: .regular, design: .rounded))
-                .foregroundColor(.secondary)
+    // MARK: - Compact Status Helpers
+    private var primaryStatusText: String {
+        if let err = viewModel.errorMessage, !err.isEmpty {
+            return "We didn’t catch enough—try again."
         }
+        if viewModel.recordedCount == viewModel.totalPrompts && !voiceprintManager.hasVoiceprint {
+            return "Captured \(viewModel.recordedCount)/\(viewModel.totalPrompts) — ready to save."
+        }
+        if viewModel.recordedCount > 0 {
+            return "Captured \(viewModel.recordedCount)/\(viewModel.totalPrompts) — sounds good."
+        }
+        return ""
+    }
+    
+    private var primaryStatusColor: Color {
+        if viewModel.errorMessage != nil { return .orange }
+        return Color(.secondaryLabel)
+    }
+    
+    private var secondaryStatusText: String? {
+        if viewModel.errorMessage != nil {
+            return "Move closer, speak a bit louder and clearly, and finish the sentence."
+        }
+        if let hint = viewModel.lastQualityHint, !hint.isEmpty {
+            return hint
+        }
+        return nil
     }
     
     private var completionBadge: some View {
@@ -248,10 +360,8 @@ struct VoiceprintCardView: View {
             return "“Hey Guido, where am I?”"
         case 1:
             return "“What's the best dessert spot near me?”"
-        case 2:
-            return "“Are there any available e-bikes nearby?”"
         default:
-            return "“Can you check menus nearby for gluten-free options?”"
+            return "“What's the best dessert spot near me?”"
         }
     }
     

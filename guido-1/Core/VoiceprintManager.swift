@@ -35,21 +35,32 @@ final class VoiceprintManager: ObservableObject {
     
     func refreshFromRemote() async {
         status = .loading
-        if let payload = await profileService?.fetchVoiceprint() ?? loadLocalVoiceprint() {
+        let remote = await profileService?.fetchVoiceprint()
+        if let payload = remote {
+            print("[Voiceprint] ☁️ Loaded voiceprint from Supabase (vector: \(payload.vector.count))")
             saveLocalVoiceprint(payload)
             status = .available(payload)
+            return
+        }
+        if let local = loadLocalVoiceprint() {
+            print("[Voiceprint] 💾 Loaded voiceprint from local cache (vector: \(local.vector.count))")
+            status = .available(local)
         } else {
+            print("[Voiceprint] 🔍 No voiceprint found (remote/local)")
             status = .missing
         }
     }
     
     func saveVoiceprint(_ payload: VoiceprintPayload) async {
         status = .loading
-        let succeeded = await profileService?.saveVoiceprint(payload) ?? saveLocalVoiceprint(payload)
-        if succeeded {
-            saveLocalVoiceprint(payload)
+        print("[Voiceprint] 📨 Saving voiceprint (vector: \(payload.vector.count), sr: \(Int(payload.metadata.sampleRate)))")
+        let remoteSucceeded = await profileService?.saveVoiceprint(payload) ?? false
+        let localSucceeded = saveLocalVoiceprint(payload)
+        if remoteSucceeded || localSucceeded {
+            print("[Voiceprint] ✅ Voiceprint save succeeded (remote: \(remoteSucceeded ? "yes" : "no"), local: \(localSucceeded ? "yes" : "no"))")
             status = .available(payload)
         } else {
+            print("[Voiceprint] ❌ Voiceprint save failed (remote/local)")
             status = .error("Failed to save voiceprint")
         }
     }

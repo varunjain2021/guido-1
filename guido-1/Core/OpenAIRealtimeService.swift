@@ -362,10 +362,6 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         }
     }
     
-    deinit {
-        voiceprintObservationTask?.cancel()
-    }
-    
     func setPreferredLanguageCode(_ code: String) {
         let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalized.isEmpty else { return }
@@ -1424,7 +1420,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         let threshold: Float = 0.80
         let sim = speakerVerifier.similarity(samples: snippet.samples)
         let pass = sim >= threshold
-        print("\(pass ? "✅" : "❌") [Voiceprint] similarity=\(String(format: "%.3f", sim)) threshold=\(threshold) frames=\(snippet.samples.count)")
+        let enrolledFP = hashFloatVector(speakerVerifier.enrolled)
+        print("\(pass ? "✅" : "❌") [Voiceprint] similarity=\(String(format: "%.3f", sim)) threshold=\(threshold) frames=\(snippet.samples.count) enrolled_fp=\(enrolledFP)")
         return pass
     }
     
@@ -1432,7 +1429,9 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         var verifier = speakerVerifier
         verifier.applyStoredVoiceprint(vector: payload.vector)
         speakerVerifier = verifier
-        print("📝 [Voiceprint] Loaded stored voiceprint version \(payload.metadata.version)")
+        let srcFP = hashVector(payload.vector)                 // hash over Double[] as stored
+        let enrolledFP = hashFloatVector(speakerVerifier.enrolled) // hash over Float[] actually used
+        print("📝 [Voiceprint] Loaded stored voiceprint \(payload.metadata.version) (src_fp=\(srcFP), enrolled_fp=\(enrolledFP))")
     }
     
     // handleAudioDelta removed in WebRTC mode
@@ -1789,6 +1788,36 @@ extension OpenAIRealtimeService: WebRTCEventSink {
 
 // MARK: - Public helpers for WebRTCManager integration
 extension OpenAIRealtimeService {
+    // Short fingerprint (hash) utilities for logging
+    private func hashVector(_ vector: [Double]) -> String {
+        var hash: UInt64 = 1469598103934665603 // FNV-1a 64-bit
+        let prime: UInt64 = 1099511628211
+        for d in vector {
+            var bits = d.bitPattern
+            for _ in 0..<8 {
+                let byte = UInt8(bits & 0xFF)
+                hash ^= UInt64(byte)
+                hash = hash &* prime
+                bits >>= 8
+            }
+        }
+        return String(hash, radix: 16)
+    }
+    
+    private func hashFloatVector(_ vector: [Float]) -> String {
+        var hash: UInt64 = 1469598103934665603 // FNV-1a 64-bit
+        let prime: UInt64 = 1099511628211
+        for f in vector {
+            var bits = f.bitPattern
+            for _ in 0..<4 {
+                let byte = UInt8(bits & 0xFF)
+                hash ^= UInt64(byte)
+                hash = hash &* prime
+                bits >>= 8
+            }
+        }
+        return String(hash, radix: 16)
+    }
     func getToolDefinitionsJSON() -> [[String: Any]] {
         do {
             let defs = MCPToolCoordinator.getAllToolDefinitions()

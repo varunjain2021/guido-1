@@ -112,6 +112,8 @@ class AppState: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             self.authStatus = await self.authService.currentStatus()
+            // After auth status is known, try refreshing voiceprint from Supabase
+            await self.voiceprintManager.refreshFromRemote()
         }
     }
 
