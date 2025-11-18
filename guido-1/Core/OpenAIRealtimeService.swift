@@ -246,7 +246,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     
     // MARK: - VAD Configuration
     fileprivate enum VADConfig {
-        static let useSemanticVAD = true  // Prefer semantic VAD per latest API guidance
+        static let useSemanticVAD = false  // Switch to server-side VAD for evaluation
         static let semanticEagerness = "low"  
         // Simple VAD settings - keeping default sensitivity for natural conversation
         static let serverThreshold: Double = 0.6  // Slightly higher for fewer false positives
@@ -275,6 +275,10 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     private var lastToolStartTime: TimeInterval = 0
     private var openAIChatService: OpenAIChatService?
     private var discoveryEngine: DiscoveryEngine?
+    // Lightweight in-memory speaker gate (temporary evaluation)
+    private var speakerVerifier = SimpleSpeakerVerifier()
+    private var speakerGateEnabled = true
+    private var isCurrentUtteranceBlockedByVoiceprint = false
     
     enum ConversationState {
         case idle
@@ -962,6 +966,9 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 if !isSessionReady {
                     isSessionReady = true
                     await sendClearInputBuffer()
+                    // Opportunistic, silent enrollment of a temporary voiceprint
+                    print("🎙️ [Voiceprint] Starting temporary enrollment (target ~3.0s), device sampleRate=\(audioSession.sampleRate)")
+                    enrollSpeakerVoiceprintIfNeeded()
                     if !didSendInitialGreeting {
                         await sendInitialGreetingInPreferredLanguage()
                     }
@@ -1190,6 +1197,22 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 print("🗣️ [VAD] Pending tool calls: \(pendingToolCalls.count), Response ID: \(currentResponseId ?? "none")")
                 
                 // ENHANCED INTERRUPTION DETECTION
+                // Lightweight voiceprint gate for any incoming speech start (AI speaking, tool executing, or idle)
+                if speakerGateEnabled {
+                    print("🔎 [Voiceprint] Gate check start (responding=\(isAIResponding), toolExecuting=\(isToolExecuting), enrolled=\(!speakerVerifier.enrolled.isEmpty))")
+                    let allowed = await passesSpeakerGateQuickCheck()
+                    if !allowed {
+                        isCurrentUtteranceBlockedByVoiceprint = true
+                        print("🙈 [Voiceprint] Blocking current utterance (state: responding=\(isAIResponding), toolExecuting=\(isToolExecuting))")
+                        return
+                    } else {
+                        isCurrentUtteranceBlockedByVoiceprint = false
+                        print("🟢 [Voiceprint] Allowed (matched or pass-through); proceeding with utterance")
+                    }
+                } else {
+                    print("🔧 [Voiceprint] Gate disabled; allowing utterance")
+                }
+                
                 // Check if we need to interrupt ongoing AI activity (response, audio playback, or tool execution)
                 let shouldInterrupt = isAIResponding || isToolExecuting
                 
@@ -1209,6 +1232,11 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
 
                 
             case "input_audio_buffer.speech_stopped":
+                if isCurrentUtteranceBlockedByVoiceprint {
+                    print("🙈 [Voiceprint] Ignoring speech_stopped for blocked utterance")
+                    isCurrentUtteranceBlockedByVoiceprint = false
+                    return
+                }
                 let currentTime = Date().timeIntervalSince1970
                 let speechDuration = speechStartTime > 0 ? currentTime - speechStartTime : 0
                 print("🤐 [VAD] Speech stopped at \(currentTime) - duration: \(speechDuration)s")
@@ -1348,6 +1376,40 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         } catch {
             print("❌ Failed to decode event: \(error)")
         }
+    }
+    
+    // MARK: - Temporary speaker voiceprint helpers (in-memory only)
+    private func enrollSpeakerVoiceprintIfNeeded() {
+        guard speakerGateEnabled, speakerVerifier.enrolled.isEmpty else { return }
+        Task {
+            // Slightly larger enrollment window for stability
+            let s = await AudioSnippets.recordMonoFloat32(seconds: 3.0, sampleRate: 16000)
+            if s.count > 16000 { // ~1s minimum
+                var v = speakerVerifier
+                v.enroll(from: s)
+                speakerVerifier = v
+                print("🔒 [Voiceprint] Enrolled temporary in-memory voiceprint (frames=\(s.count))")
+            } else {
+                print("⚠️ [Voiceprint] Enrollment sample too short (frames=\(s.count))")
+            }
+        }
+    }
+    
+    private func passesSpeakerGateQuickCheck() async -> Bool {
+        let s = await AudioSnippets.recordMonoFloat32(seconds: 0.7, sampleRate: 16000)
+        if s.isEmpty {
+            print("⚠️ [Voiceprint] Snippet capture failed; allowing utterance (fail-open)")
+            return true // fail-open if capture not available
+        }
+        if speakerVerifier.enrolled.isEmpty {
+            print("ℹ️ [Voiceprint] Not enrolled; allowing utterance")
+            return true
+        }
+        let threshold: Float = 0.80
+        let sim = speakerVerifier.similarity(samples: s)
+        let pass = sim >= threshold
+        print("\(pass ? "✅" : "❌") [Voiceprint] similarity=\(String(format: "%.3f", sim)) threshold=\(threshold) frames=\(s.count)")
+        return pass
     }
     
     // handleAudioDelta removed in WebRTC mode
