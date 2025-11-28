@@ -28,18 +28,29 @@ struct RealtimeConversationView: View {
         }
     }
     
+    @EnvironmentObject private var appState: AppState
     @State private var viewState: ViewState = .disconnected
     @State private var showConnectionAnimation = false
     @State private var audioLevelAnimation = false
     
     @StateObject private var realtimeService: OpenAIRealtimeService
     @StateObject private var locationManager = LocationManager()
+    @State private var sessionLogger: SessionLogger
+    @State private var activeUserId: String?
     
     private let openAIAPIKey: String
+    private let supabaseURL: String
+    private let supabaseAnonKey: String
     
-    init(openAIAPIKey: String) {
+    init(openAIAPIKey: String, supabaseURL: String, supabaseAnonKey: String, currentUserId: String?) {
         self.openAIAPIKey = openAIAPIKey
-        self._realtimeService = StateObject(wrappedValue: OpenAIRealtimeService(apiKey: openAIAPIKey))
+        self.supabaseURL = supabaseURL
+        self.supabaseAnonKey = supabaseAnonKey
+        let initialSink = RealtimeConversationView.makeSink(baseURL: supabaseURL, anonKey: supabaseAnonKey)
+        let logger = SessionLogger(sink: initialSink, userId: currentUserId)
+        self._sessionLogger = State(initialValue: logger)
+        self._activeUserId = State(initialValue: currentUserId)
+        self._realtimeService = StateObject(wrappedValue: OpenAIRealtimeService(apiKey: openAIAPIKey, sessionLogger: logger))
         print("🚀 RealtimeConversationView initializing...")
     }
     
@@ -89,14 +100,26 @@ struct RealtimeConversationView: View {
                 audioLevelAnimation = level > 0.02
             }
         }
+        .onReceive(locationManager.$currentLocation.compactMap { $0 }) { location in
+            guard viewState == .connected else { return }
+            sessionLogger.logLocation(SessionLocationSnapshot(location: location, source: "device.location"))
+        }
+        .onChange(of: appState.authStatus.user?.id) { newUserId in
+            activeUserId = newUserId
+            sessionLogger.updateUser(id: newUserId)
+        }
         .onAppear {
             locationManager.requestLocationPermission()
+            realtimeService.setSessionLogger(sessionLogger)
+            sessionLogger.appendLifecycle(.foregrounded, detail: "RealtimeConversationView appeared")
         }
         .onDisappear {
             // Cleanup when user navigates away
             if viewState == .connected {
                 stopConversation()
             }
+            sessionLogger.appendLifecycle(.backgrounded, detail: "RealtimeConversationView disappeared")
+            sessionLogger.flush()
         }
     }
     
@@ -620,10 +643,37 @@ struct RealtimeConversationView: View {
     }
     
     // MARK: - Actions
+    private static func makeSink(baseURL: String, anonKey: String) -> SessionLogSink {
+        guard !baseURL.isEmpty, !anonKey.isEmpty else {
+            return ConsoleSessionLogSink()
+        }
+        return SupabaseSessionLogSink(baseURL: baseURL, anonKey: anonKey)
+    }
+    
+    private func resetSessionLogger(reason: String) {
+        let sink = RealtimeConversationView.makeSink(baseURL: supabaseURL, anonKey: supabaseAnonKey)
+        let logger = SessionLogger(sink: sink, userId: activeUserId)
+        sessionLogger = logger
+        realtimeService.setSessionLogger(logger)
+        logger.updateMetadata { metadata in
+            metadata.connectionType = NetworkStatusMonitor.shared.connectionType()
+            var extras = metadata.additionalInfo ?? [:]
+            extras["experience"] = "realtime"
+            extras["preferredLanguage"] = realtimeService.preferredLanguageCode
+            extras["theme"] = String(describing: appState.selectedTheme)
+            if let email = appState.authStatus.user?.email {
+                extras["userEmail"] = email
+            }
+            metadata.additionalInfo = extras
+        }
+        logger.appendLifecycle(.foregrounded, detail: reason)
+    }
+    
     private func startConversation() {
         print("🚀 Starting real-time conversation...")
         viewState = .connecting
         showConnectionAnimation = true
+        resetSessionLogger(reason: "User started conversation")
         
         Task {
             do {
@@ -645,6 +695,9 @@ struct RealtimeConversationView: View {
     
     private func stopConversation() {
         print("🛑 Stopping real-time conversation...")
+        sessionLogger.appendLifecycle(.ended, detail: "User ended conversation")
+        sessionLogger.endSession()
+        sessionLogger.flush()
         realtimeService.stopStreaming()
         realtimeService.disconnect()
         viewState = .disconnected

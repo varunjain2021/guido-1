@@ -11,6 +11,7 @@ import AVFoundation
 import WebRTC
 #endif
 import Combine
+import CoreLocation
 
 // MARK: - Realtime Event Types
 struct RealtimeEvent: Codable {
@@ -275,6 +276,9 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     private var lastToolStartTime: TimeInterval = 0
     private var openAIChatService: OpenAIChatService?
     private var discoveryEngine: DiscoveryEngine?
+    private var sessionLogger: SessionLogger?
+    private weak var boundLocationManager: LocationManager?
+    private var loggedAssistantMessageIds: Set<UUID> = []
     
     enum ConversationState {
         case idle
@@ -337,10 +341,11 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     // Preferred conversation language (ISO-639-1), defaults to English
     private(set) var preferredLanguageCode: String = "en"
     
-    init(apiKey: String) {
+    init(apiKey: String, sessionLogger: SessionLogger? = nil) {
         self.apiKey = apiKey
         self.urlSession = URLSession.shared
         self.audioSession = AVAudioSession.sharedInstance()
+        self.sessionLogger = sessionLogger
         super.init()
         setupAudioSession()
         print("🚀 OpenAI Realtime Service initialized")
@@ -357,6 +362,10 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
 
     func setEventSender(_ sender: WebRTCEventSender) {
         self.outboundEventSender = sender
+    }
+
+    func setSessionLogger(_ logger: SessionLogger?) {
+        self.sessionLogger = logger
     }
     
 
@@ -437,11 +446,18 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             let result = try await discoveryEngine.answer(question: question, context: context)
             print("🧭 [Discovery] Facet='\(result.facet)', confidence=\(String(format: "%.2f", result.confidence ?? 0))")
             print("🔗 [Discovery] Citations: \(result.citations.map { $0.url?.absoluteString ?? $0.title }.joined(separator: " | "))")
+            sessionLogger?.logReasoning(
+                content: result.rawJSON,
+                model: "discovery",
+                tokenCount: nil,
+                traceId: result.facet
+            )
             
             // Surface a concise assistant message into the conversation (UI can also render rich card)
             let summary = result.answer
             let assistant = RealtimeMessage(role: "assistant", content: summary, timestamp: Date())
             conversation.append(assistant)
+            sessionLogger?.logAssistantMessage(text: summary, model: "discovery", latency: nil, metadata: ["facet": result.facet])
             print("🧭 [Discovery] Appended discovery answer to conversation")
         } catch {
             print("❌ [Discovery] DiscoveryEngine failed: \(error.localizedDescription)")
@@ -454,6 +470,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     }
     
     func setLocationManager(_ manager: LocationManager) {
+        boundLocationManager = manager
         toolManager.setLocationManager(manager)
         
         // Initialize location search service
@@ -491,6 +508,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     // MARK: - Connection Management
     func connect() async throws {
         print("🔌 [CONNECT] Connecting to OpenAI Realtime API...")
+        sessionLogger?.appendLifecycle(.foregrounded, detail: "Connecting to OpenAI Realtime API")
         // Reset session gating state
         isSessionReady = false
         isDataChannelReady = false
@@ -515,6 +533,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         // Play connection sound
         audioFeedbackManager.playConnectionSound()
         print("✅ [CONNECT] Connected to OpenAI Realtime API")
+        sessionLogger?.appendLifecycle(.foregrounded, detail: "Connected to OpenAI Realtime API")
     }
     
     func disconnect() {
@@ -572,6 +591,9 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         didSendInitialGreeting = false
         hasQueuedInitialGreeting = false
         pendingDataChannelMessages.removeAll()
+        loggedAssistantMessageIds.removeAll()
+        sessionLogger?.endSession()
+        sessionLogger?.flush()
     }
     
     // MARK: - Private Methods (WebRTC only)
@@ -929,6 +951,9 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             connectionStatus = "Error: \(errorMessage)"
             isConnected = false
         }
+        sessionLogger?.appendLifecycle(.error, detail: errorMessage)
+        sessionLogger?.endSession(errorSummary: errorMessage)
+        sessionLogger?.flush()
         
         disconnect()
     }
@@ -1032,6 +1057,12 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                     // Add user message to conversation
                     let message = RealtimeMessage(role: "user", content: transcript, timestamp: Date())
                     conversation.append(message)
+                    sessionLogger?.logUserMessage(
+                        text: transcript,
+                        languageCode: preferredLanguageCode,
+                        latency: nil,
+                        metadata: ["source": "transcript.completed"]
+                    )
                     print("👤 [TRANSCRIPT] User said: '\(transcript)' - added to conversation (total: \(conversation.count))")
                     
                     // Opportunistic Discovery wiring: let the orchestrator decide tools.
@@ -1072,6 +1103,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                     conversation[lastStreamingIndex].isStreaming = false
                     let guarded = NavigationStyleGuard.enforce(conversation[lastStreamingIndex].content)
                     conversation[lastStreamingIndex].content = guarded.text
+                    logAssistantMessageIfNeeded(conversation[lastStreamingIndex], source: "audio_transcript")
                     print("✅ AI transcript completed (guard applied: \(guarded.violations)): '\(conversation[lastStreamingIndex].content)'")
                 } else {
                     print("⚠️ No streaming AI message found to mark as complete")
@@ -1117,6 +1149,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                     conversation[idx].isStreaming = false
                     let guarded = NavigationStyleGuard.enforce(conversation[idx].content)
                     conversation[idx].content = guarded.text
+                    logAssistantMessageIfNeeded(conversation[idx], source: "text")
                     print("✅ Output text completed (guard applied: \(guarded.violations))")
                 }
                 
@@ -1125,10 +1158,13 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 
                 // Extract response completion details
                 var completionInfo = "unknown"
+                var doneResponseId: String? = nil
+                var doneStatus: String? = nil
                 if let root = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any],
                    let responseObj = root["response"] as? [String: Any] {
                     if let responseId = responseObj["id"] as? String {
                         completionInfo = "ID: \(responseId)"
+                        doneResponseId = responseId
                         if currentResponseId == responseId {
                             currentResponseId = nil
                             print("🔄 [RESPONSE] Cleared current response ID: \(responseId)")
@@ -1136,6 +1172,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                     }
                     if let status = responseObj["status"] as? String {
                         completionInfo += ", status: \(status)"
+                        doneStatus = status
                         if status == "failed" {
                             let err = responseObj["error"] as? [String: Any]
                             let msg = err?["message"] as? String ?? "(no message)"
@@ -1148,6 +1185,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 } else if let raw = String(data: eventData, encoding: .utf8) {
                     print("📄 [RESPONSE] Raw response.done JSON (unparsed): \(raw)")
                 }
+                
+                sessionLogger?.logResponseCompleted(responseId: doneResponseId, status: doneStatus)
                 
                 print("✅ [RESPONSE] Response completed at \(lastResponseCompleteTime) (\(completionInfo))")
                 print("✅ [RESPONSE] Final state: tool executing=\(isToolExecuting), pending tools=\(pendingToolCalls.count)")
@@ -1162,15 +1201,19 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             case "response.cancelled":
                 let cancelTime = Date().timeIntervalSince1970
                 var cancelInfo = "unknown"
+                var cancelledId: String? = nil
                 if let root = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any],
                    let responseObj = root["response"] as? [String: Any],
                    let responseId = responseObj["id"] as? String {
                         cancelInfo = "ID: \(responseId)"
+                        cancelledId = responseId
                         if currentResponseId == responseId {
                             currentResponseId = nil
                             print("🔄 [CANCEL] Cleared cancelled response ID: \(responseId)")
                     }
                 }
+                
+                sessionLogger?.logResponseCancelled(responseId: cancelledId, reason: "User interruption or server cancel")
                 
                 print("❌ [CANCEL] Response cancelled at \(cancelTime) (\(cancelInfo))")
                 print("❌ [CANCEL] State at cancellation: tool executing=\(isToolExecuting), pending tools=\(pendingToolCalls.count)")
@@ -1189,6 +1232,13 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 print("🗣️ [VAD] Time since: last response=\(String(format: "%.2f", timeSinceLastResponse))s, buffer clear=\(String(format: "%.2f", timeSinceLastClear))s, tool start=\(String(format: "%.2f", timeSinceToolStart))s")
                 print("🗣️ [VAD] Pending tool calls: \(pendingToolCalls.count), Response ID: \(currentResponseId ?? "none")")
                 
+                // Log speech started
+                sessionLogger?.logSpeechStarted(metadata: [
+                    "aiResponding": String(isAIResponding),
+                    "toolExecuting": String(isToolExecuting),
+                    "pendingTools": String(pendingToolCalls.count)
+                ])
+                
                 // ENHANCED INTERRUPTION DETECTION
                 // Check if we need to interrupt ongoing AI activity (response, audio playback, or tool execution)
                 let shouldInterrupt = isAIResponding || isToolExecuting
@@ -1196,8 +1246,20 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 if shouldInterrupt {
                     if isToolExecuting {
                         print("🛑 [INTERRUPT] User speaking during tool execution - \(pendingToolCalls.count) tools pending")
+                        sessionLogger?.logInterrupt(
+                            reason: "User spoke during tool execution",
+                            wasAIResponding: isAIResponding,
+                            wasToolExecuting: isToolExecuting,
+                            cancelledResponseId: currentResponseId
+                        )
                     } else if isAIResponding {
                         print("🛑 [INTERRUPT] User speaking during AI response generation")
+                        sessionLogger?.logInterrupt(
+                            reason: "User spoke during AI response",
+                            wasAIResponding: isAIResponding,
+                            wasToolExecuting: isToolExecuting,
+                            cancelledResponseId: currentResponseId
+                        )
                     }
                     // WebRTC handles playback; nothing to stop locally
                 } else {
@@ -1218,16 +1280,16 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 
                 // Let server VAD handle all speech detection - trust OpenAI's optimized algorithms
                 
-
-                
                 // Ignore very short utterances that Whisper often mis-transcribes
                 if speechDuration < VADConfig.minimumSpeechDuration {
                     print("⚠️ [VAD] Speech too short (\(String(format: "%.2f", speechDuration))s) – ignored (threshold: \(VADConfig.minimumSpeechDuration)s)")
+                    sessionLogger?.logSpeechIgnored(durationSeconds: speechDuration, reason: "Too short (< \(VADConfig.minimumSpeechDuration)s)")
                     conversationState = .listening
                     return
                 }
                 // Accept all other speech durations - server VAD will determine validity
                 print("✅ [VAD] Speech stopped (duration: \(String(format: "%.2f", speechDuration))s) - server VAD processing")
+                sessionLogger?.logSpeechStopped(durationSeconds: speechDuration)
                 
                 conversationState = .processing
                 
@@ -1236,6 +1298,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 
             case "input_audio_buffer.committed":
                 print("✅ [BUFFER] Audio buffer committed successfully")
+                sessionLogger?.logSpeechCommitted()
                 
             case "conversation.item.created":
                 print("💬 Conversation item created")
@@ -1246,14 +1309,17 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 
             case "response.created":
                 // Extract nested response.id per latest schema
+                var extractedResponseId: String? = nil
                 if let root = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any],
                    let responseObj = root["response"] as? [String: Any],
                    let responseId = responseObj["id"] as? String {
                     currentResponseId = responseId
+                    extractedResponseId = responseId
                     print("🤖 [RESPONSE] AI response created with ID: \(responseId)")
                 } else {
                     print("🤖 [RESPONSE] AI response created (no ID extracted)")
                 }
+                sessionLogger?.logResponseCreated(responseId: extractedResponseId)
                 
                 conversationState = .thinking
                 // no-op metrics; play minimal feedback
@@ -1446,6 +1512,15 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             let arguments = try JSONSerialization.jsonObject(with: argumentsData) as? [String: Any] ?? [:]
             print("🔧 [TOOL] Raw arguments string: \(argumentsString)")
             print("🔧 [TOOL] Parsed arguments: \(arguments)")
+            let locationContext = locationSnapshot(forTool: name)
+            sessionLogger?.logToolCall(
+                name: name,
+                invocationId: callId,
+                parameters: SessionJSONValue.fromAny(arguments),
+                locationContext: locationContext,
+                latency: nil,
+                metadata: ["callId": callId]
+            )
             
             // Validate arguments are JSON-serializable to prevent crashes
             do {
@@ -1463,6 +1538,15 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
             let executionDuration = executionEndTime - executionStartTime
             print("🔧 [TOOL] Completed execution: \(name) in \(String(format: "%.2f", executionDuration))s")
             print("🔧 [TOOL] Result success: \(result.success)")
+            sessionLogger?.logToolResult(
+                name: name,
+                invocationId: callId,
+                success: result.success,
+                output: SessionJSONValue.fromAny(result.data),
+                errorDescription: result.success ? nil : String(describing: result.data),
+                latency: executionDuration,
+                metadata: ["callId": callId]
+            )
             
             // Mark tool as completed and update tracking state
             pendingToolCalls.remove(callId)
@@ -1649,6 +1733,39 @@ Rules:
             return parts[0]
         }
     }
+
+    private func logAssistantMessageIfNeeded(_ message: RealtimeMessage, source: String) {
+        guard !loggedAssistantMessageIds.contains(message.id) else { return }
+        sessionLogger?.logAssistantMessage(text: message.content, model: "gpt-realtime", latency: nil, metadata: ["source": source])
+        loggedAssistantMessageIds.insert(message.id)
+    }
+
+    private func locationSnapshot(forTool toolName: String? = nil) -> SessionLocationSnapshot? {
+        guard let location = boundLocationManager?.currentLocation else { return nil }
+        if let toolName {
+            guard Self.locationAwareToolNames.contains(toolName) else { return nil }
+            return SessionLocationSnapshot(location: location, source: "tool:\(toolName)")
+        }
+        return SessionLocationSnapshot(location: location, source: "device")
+    }
+
+    private static let locationAwareToolNames: Set<String> = [
+        "get_user_location",
+        "find_nearby_places",
+        "find_places_on_route",
+        "get_directions",
+        "find_local_events",
+        "recommend_restaurants",
+        "find_transportation",
+        "get_weather",
+        "get_safety_info",
+        "check_travel_requirements",
+        "get_emergency_info",
+        "bikes_nearby",
+        "docks_nearby",
+        "station_availability",
+        "parking_near_destination"
+    ]
     
     func truncateConversation() async {
         guard isConnected else { return }

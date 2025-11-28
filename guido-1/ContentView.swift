@@ -42,11 +42,21 @@ struct ContentView: View {
                 Group {
                     switch selectedExperience {
                     case .immersive:
-                        ImmersiveConversationView(openAIAPIKey: appState.openAIAPIKey)
+                        ImmersiveConversationView(
+                            openAIAPIKey: appState.openAIAPIKey,
+                            supabaseURL: appState.supabaseURL,
+                            supabaseAnonKey: appState.supabaseAnonKey,
+                            currentUserId: appState.currentUserId
+                        )
                     case .croatian:
                         CroatianBeachConversationView(openAIAPIKey: appState.openAIAPIKey)
                     case .realtime:
-                        RealtimeConversationView(openAIAPIKey: appState.openAIAPIKey)
+                        RealtimeConversationView(
+                            openAIAPIKey: appState.openAIAPIKey,
+                            supabaseURL: appState.supabaseURL,
+                            supabaseAnonKey: appState.supabaseAnonKey,
+                            currentUserId: appState.currentUserId
+                        )
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

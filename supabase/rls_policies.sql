@@ -106,4 +106,49 @@ create policy "Update own conversation_logs"
 -- - These policies apply for the anon/service role depending on the API key used.
 -- - Use the client session access token (not just anon key) to ensure auth.uid() is present.
 
+-- 4) Session-level observability
+create table if not exists public.session_recordings (
+  id uuid primary key default gen_random_uuid(),
+  session_id text not null unique,
+  user_id uuid references auth.users(id) on delete set null,
+  user_email text, -- denormalized for easy querying
+  events jsonb not null default '[]'::jsonb, -- ordered array of session events
+  metadata jsonb not null default '{}'::jsonb, -- device/app/location metadata
+  last_known_location jsonb, -- { "latitude": Double, "longitude": Double, "accuracyMeters": Double }
+  started_at timestamptz default now(),
+  ended_at timestamptz,
+  error_summary text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table public.session_recordings enable row level security;
+
+drop trigger if exists trg_session_recordings_updated_at on public.session_recordings;
+create trigger trg_session_recordings_updated_at
+before update on public.session_recordings
+for each row execute function public.set_updated_at();
+
+create index if not exists idx_session_recordings_user_id on public.session_recordings(user_id);
+create index if not exists idx_session_recordings_session_id on public.session_recordings(session_id);
+
+drop policy if exists "Select own session recordings" on public.session_recordings;
+create policy "Select own session recordings"
+  on public.session_recordings for select
+  using (user_id is not distinct from auth.uid());
+
+drop policy if exists "Insert session recordings" on public.session_recordings;
+create policy "Insert session recordings"
+  on public.session_recordings for insert
+  with check (
+    user_id is null
+    or user_id is not distinct from auth.uid()
+  );
+
+drop policy if exists "Update own session recordings" on public.session_recordings;
+create policy "Update own session recordings"
+  on public.session_recordings for update
+  using (user_id is null or user_id is not distinct from auth.uid())
+  with check (user_id is null or user_id is not distinct from auth.uid());
+
 

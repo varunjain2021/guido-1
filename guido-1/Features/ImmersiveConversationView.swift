@@ -13,6 +13,12 @@ struct ImmersiveConversationView: View {
     @StateObject private var realtimeService: OpenAIRealtimeService
     @StateObject private var webrtcManager = WebRTCManager()
     @StateObject private var locationManager = LocationManager()
+    @StateObject private var sessionLogger: SessionLogger
+    
+    // Supabase config for logging
+    private let supabaseURL: String
+    private let supabaseAnonKey: String
+    @State private var activeUserId: String?
     
     // UI State
     @State private var showResults = false
@@ -34,10 +40,21 @@ struct ImmersiveConversationView: View {
     
     private let openAIAPIKey: String
     
-    init(openAIAPIKey: String) {
+    init(openAIAPIKey: String, supabaseURL: String = "", supabaseAnonKey: String = "", currentUserId: String? = nil) {
         self.openAIAPIKey = openAIAPIKey
+        self.supabaseURL = supabaseURL
+        self.supabaseAnonKey = supabaseAnonKey
         self._realtimeService = StateObject(wrappedValue: OpenAIRealtimeService(apiKey: openAIAPIKey))
+        let sink = ImmersiveConversationView.makeSink(baseURL: supabaseURL, anonKey: supabaseAnonKey)
+        self._sessionLogger = StateObject(wrappedValue: SessionLogger(sink: sink, userId: currentUserId))
         print("🌟 Immersive Conversation View initializing...")
+    }
+    
+    private static func makeSink(baseURL: String, anonKey: String) -> SessionLogSink {
+        guard !baseURL.isEmpty, !anonKey.isEmpty else {
+            return ConsoleSessionLogSink()
+        }
+        return SupabaseSessionLogSink(baseURL: baseURL, anonKey: anonKey)
     }
     
     var body: some View {
@@ -163,12 +180,15 @@ struct ImmersiveConversationView: View {
                 }
             }
         }
-        .onChange(of: appState.authStatus.user?.id) { _ in
+        .onChange(of: appState.authStatus.user?.id) { newUserId in
             if showSettings {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     showSettings = false
                 }
             }
+            // Keep session logger in sync with auth changes
+            activeUserId = newUserId
+            sessionLogger.updateUser(id: newUserId, email: appState.authStatus.user?.email)
         }
         .onReceive(realtimeService.$isConnected) { isConnected in
             if isConnected {
@@ -176,6 +196,11 @@ struct ImmersiveConversationView: View {
                 connectionError = nil
                 setupLocationTracking()
             }
+        }
+        .onReceive(locationManager.$currentLocation.compactMap { $0 }) { location in
+            // Log location updates while connected
+            guard realtimeService.isConnected else { return }
+            sessionLogger.logLocation(SessionLocationSnapshot(location: location, source: "device.location"))
         }
         .onReceive(realtimeService.$conversationState) { state in
             updateSpeechStates(for: state)
@@ -301,6 +326,10 @@ struct ImmersiveConversationView: View {
         
         // Ensure tools have access to LocationManager before conversation starts
         realtimeService.setLocationManager(locationManager)
+        
+        // Wire session logger for observability
+        realtimeService.setSessionLogger(sessionLogger)
+        sessionLogger.appendLifecycle(.foregrounded, detail: "ImmersiveConversationView appeared")
     }
     
     private func setupLocationTracking() {
@@ -313,6 +342,9 @@ struct ImmersiveConversationView: View {
         
         // Safety: ensure LocationManager is wired just before starting
         realtimeService.setLocationManager(locationManager)
+        
+        // Reset session logger for a fresh session
+        resetSessionLogger(reason: "User started immersive conversation")
         
         // Use WebRTCManager for voice transport; reuse existing instructions/tools
         webrtcManager.startConnection(
@@ -328,10 +360,40 @@ struct ImmersiveConversationView: View {
         webrtcManager.stopConnection()
         realtimeService.disconnect()
         hideResults()
+        
+        // End and flush session log
+        sessionLogger.appendLifecycle(.ended, detail: "User ended immersive conversation")
+        sessionLogger.endSession()
+        sessionLogger.flush()
+        
         print("🌟 Immersive conversation ended")
     }
     
-
+    private func resetSessionLogger(reason: String) {
+        // Create fresh metadata for the new session
+        var metadata = SessionMetadata.makeDefault()
+        metadata.connectionType = NetworkStatusMonitor.shared.connectionType()
+        
+        // Store custom fields in additionalInfo
+        var info: [String: String] = [:]
+        info["experience"] = "immersive"
+        info["languageCode"] = appState.conversationLanguageCode
+        info["theme"] = String(describing: appState.selectedTheme)
+        if let email = appState.authStatus.user?.email {
+            info["email"] = email
+        }
+        metadata.additionalInfo = info
+        
+        // Re-initialize the underlying recording via update
+        sessionLogger.updateUser(id: appState.authStatus.user?.id, email: appState.authStatus.user?.email)
+        sessionLogger.updateMetadata { m in
+            m = metadata
+        }
+        sessionLogger.appendLifecycle(.started, detail: reason)
+        
+        // Re-wire logger to service
+        realtimeService.setSessionLogger(sessionLogger)
+    }
     
     // MARK: - Speech State Management
     
