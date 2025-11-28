@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
@@ -132,6 +133,37 @@ struct SettingsView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(PlainButtonStyle())
+                        
+                        Divider().opacity(0.3)
+                        
+                        // Developer Tools
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Developer")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(.tertiaryLabel))
+                            
+                            Button(action: {
+                                Task {
+                                    let location = appState.locationManager.currentLocation
+                                    let coord = location.map { CLLocationCoordinate2D(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
+                                    _ = await runNavigationSDKSmokeTest(apiKey: appState.googleAPIKey, currentLocation: coord)
+                                }
+                            }) {
+                                HStack {
+                                    Image(systemName: "map.fill")
+                                        .foregroundColor(.blue)
+                                    Text("Test Navigation SDK")
+                                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                                        .foregroundColor(Color(.secondaryLabel))
+                                    Spacer()
+                                    Image(systemName: "play.circle")
+                                        .foregroundColor(.blue)
+                                }
+                                .padding(.vertical, 6)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
                         
                         Divider().opacity(0.3)
                         Button(action: { Task { await appState.signOut() } }) {

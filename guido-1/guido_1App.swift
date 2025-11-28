@@ -7,10 +7,16 @@
 
 import SwiftUI
 import UserNotifications
+import GoogleMaps
 
 @main
 struct guido_1App: App {
     @StateObject private var appState = AppState()
+    
+    init() {
+        // Initialize Google Maps/Navigation SDK early
+        initializeGoogleMapsSDK()
+    }
     
     var body: some Scene {
         WindowGroup {
@@ -27,6 +33,20 @@ struct guido_1App: App {
                     NotificationService.shared.requestAuthorizationIfNeeded()
                 }
         }
+    }
+    
+    private func initializeGoogleMapsSDK() {
+        // Load API key from Config.plist
+        guard let configPath = Bundle.main.path(forResource: "Config", ofType: "plist"),
+              let configDict = NSDictionary(contentsOfFile: configPath),
+              let apiKey = configDict["Google_API_Key"] as? String,
+              !apiKey.isEmpty else {
+            print("⚠️ [GoogleMaps] Could not load API key from Config.plist")
+            return
+        }
+        
+        GMSServices.provideAPIKey(apiKey)
+        print("✅ [GoogleMaps] SDK initialized with API key: \(apiKey.prefix(10))...")
     }
     
     private func handleDeepLink(_ url: URL) {

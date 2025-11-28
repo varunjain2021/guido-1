@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		A55C0A1ECD91D1DC28C4D1A9 /* Pods_guido_1Tests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2F02A2AABBBF0F950A622CD5 /* Pods_guido_1Tests.framework */; };
 		AADA7721B01B4C3C182EA27C /* Pods_guido_1_guido_1UITests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 275F5B9FE2D897C8397303CA /* Pods_guido_1_guido_1UITests.framework */; };
+		D49E17F62ED95B58002B582E /* GoogleNavigation in Frameworks */ = {isa = PBXBuildFile; productRef = D49E17F52ED95B58002B582E /* GoogleNavigation */; };
 		D4BDD3252E6397D40011C418 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = D4BDD3242E6397D40011C418 /* Auth */; };
 		D4BDD3272E6397D40011C418 /* Functions in Frameworks */ = {isa = PBXBuildFile; productRef = D4BDD3262E6397D40011C418 /* Functions */; };
 		D4BDD3292E6397D40011C418 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = D4BDD3282E6397D40011C418 /* PostgREST */; };
@@ -100,6 +101,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D49E17F62ED95B58002B582E /* GoogleNavigation in Frameworks */,
 				E49A9E3D4C746030800DECC7 /* Pods_guido_1.framework in Frameworks */,
 				D4BDD3312E639A470011C418 /* Auth in Frameworks */,
 				D4BDD32D2E6397D40011C418 /* Storage in Frameworks */,
@@ -280,6 +282,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				D4BDD3232E6397D40011C418 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				D49E17F42ED95B58002B582E /* XCRemoteSwiftPackageReference "ios-navigation-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D47B0FEB2E35DB7B0076F1FF /* Products */;
@@ -773,6 +776,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		D49E17F42ED95B58002B582E /* XCRemoteSwiftPackageReference "ios-navigation-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googlemaps/ios-navigation-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 10.6.0;
+			};
+		};
 		D4BDD3232E6397D40011C418 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/supabase-community/supabase-swift";
@@ -784,6 +795,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		D49E17F52ED95B58002B582E /* GoogleNavigation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D49E17F42ED95B58002B582E /* XCRemoteSwiftPackageReference "ios-navigation-sdk" */;
+			productName = GoogleNavigation;
+		};
 		D4BDD3242E6397D40011C418 /* Auth */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = D4BDD3232E6397D40011C418 /* XCRemoteSwiftPackageReference "supabase-swift" */;
