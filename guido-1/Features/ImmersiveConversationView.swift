@@ -14,6 +14,7 @@ struct ImmersiveConversationView: View {
     @StateObject private var webrtcManager = WebRTCManager()
     @StateObject private var locationManager = LocationManager()
     @StateObject private var sessionLogger: SessionLogger
+    @ObservedObject private var navigationManager = NavigationManager.shared
     
     // Supabase config for logging
     private let supabaseURL: String
@@ -29,6 +30,7 @@ struct ImmersiveConversationView: View {
     @State private var connectionError: String?
     @State private var lastDirectionsSignature: String?
     @State private var persistResults: Bool = false
+    @State private var showNavigationTurnCard: Bool = false
     
     // Canvas State
     @State private var userSpeaking = false
@@ -170,6 +172,17 @@ struct ImmersiveConversationView: View {
                 .transition(.opacity)
                 .zIndex(40)
             }
+
+            if navigationManager.isNavigating && showNavigationTurnCard {
+                VStack {
+                    Spacer()
+                    navigationTurnCard
+                        .padding(.horizontal, 24)
+                        .transition(.scale.combined(with: .opacity))
+                    Spacer()
+                }
+                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showNavigationTurnCard)
+            }
         }
         .navigationBarHidden(true)
         // Ensure Settings never stays open underneath onboarding or across auth transitions
@@ -201,6 +214,16 @@ struct ImmersiveConversationView: View {
             // Log location updates while connected
             guard realtimeService.isConnected else { return }
             sessionLogger.logLocation(SessionLocationSnapshot(location: location, source: "device.location"))
+            
+            // Feed location to NavigationManager for breadcrumb tracking
+            if navigationManager.isNavigating {
+                navigationManager.recordLocation(location)
+            }
+        }
+        .onChange(of: navigationManager.isNavigating) { isNavigating in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                showNavigationTurnCard = isNavigating
+            }
         }
         .onReceive(realtimeService.$conversationState) { state in
             updateSpeechStates(for: state)
@@ -330,6 +353,27 @@ struct ImmersiveConversationView: View {
         // Wire session logger for observability
         realtimeService.setSessionLogger(sessionLogger)
         sessionLogger.appendLifecycle(.foregrounded, detail: "ImmersiveConversationView appeared")
+        
+        // Configure NavigationManager with journey persistence
+        configureNavigationManager()
+    }
+    
+    private func configureNavigationManager() {
+        // Create journey sink for Supabase persistence
+        guard !supabaseURL.isEmpty, !supabaseAnonKey.isEmpty else {
+            print("🗺️ [Navigation] Supabase not configured - journeys will not be persisted")
+            return
+        }
+        
+        let journeySink = SupabaseJourneySink(
+            baseURL: supabaseURL,
+            anonKey: supabaseAnonKey
+        )
+        
+        Task { @MainActor in
+            navigationManager.configure(journeySink: journeySink)
+            print("🗺️ [Navigation] NavigationManager configured with Supabase journey sink")
+        }
     }
     
     private func setupLocationTracking() {
@@ -357,6 +401,16 @@ struct ImmersiveConversationView: View {
     }
     
     private func stopConversation() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            showNavigationTurnCard = false
+        }
+        
+        if navigationManager.isNavigating {
+            Task {
+                await navigationManager.stopNavigation(cancelled: true)
+            }
+        }
+        
         webrtcManager.stopConnection()
         realtimeService.disconnect()
         hideResults()
@@ -428,8 +482,49 @@ struct ImmersiveConversationView: View {
     }
 
     private func handleDirectionsToolResultPayload(_ payload: Any) {
-        guard let payloadDict = decodeDirectionsPayload(payload),
-              let mapsURLString = payloadDict["maps_url"] as? String,
+        guard let payloadDict = decodeDirectionsPayload(payload) else {
+            print("[Directions] ⚠️ Unable to decode directions payload: \(payload)")
+            return
+        }
+        
+        if let previewOnly = payloadDict["preview_only"] as? Bool, previewOnly {
+            print("[Directions] ℹ️ Preview-only payload received; no UI card needed. Payload: \(payloadDict)")
+            return
+        }
+        
+        // If this is a hands-free navigation payload (no maps_url, but navigation_started flag),
+        // we skip creating a directions card and let voice/navigation UI handle it.
+        let navigationStarted: Bool = {
+            if let boolValue = payloadDict["navigation_started"] as? Bool {
+                return boolValue
+            } else if let numberValue = payloadDict["navigation_started"] as? NSNumber {
+                return numberValue.intValue != 0
+            }
+            return false
+        }()
+        
+        let navigationAlreadyActive: Bool = {
+            if let boolValue = payloadDict["navigation_already_active"] as? Bool {
+                return boolValue
+            } else if let numberValue = payloadDict["navigation_already_active"] as? NSNumber {
+                return numberValue.intValue != 0
+            }
+            return false
+        }()
+        
+        if navigationStarted || navigationAlreadyActive {
+            print("[Directions] ℹ️ Hands-free navigation payload (active/started); skipping directions card UI. Payload: \(payloadDict)")
+            return
+        }
+        
+        // If the directions tool returned an error payload (e.g., navigation already in progress),
+        // log it but don't try to render a card or treat it as a link result.
+        if let success = payloadDict["success"] as? Bool, success == false {
+            print("[Directions] ℹ️ Directions tool returned error payload (no card shown): \(payloadDict)")
+            return
+        }
+        
+        guard let mapsURLString = payloadDict["maps_url"] as? String,
               let webURL = URL(string: mapsURLString) else {
             print("[Directions] ⚠️ Unable to parse directions payload: \(payload)")
             return
@@ -512,6 +607,74 @@ struct ImmersiveConversationView: View {
         }
         let km = Double(meters) / 1000.0
         return String(format: "%.1f km", km)
+    }
+    
+    private var navigationTurnCard: some View {
+        let instruction = navigationManager.currentInstruction.isEmpty ? "Navigation active" : navigationManager.currentInstruction
+        let nextStep = navigationManager.nextInstruction
+        let statusLine = formattedDistanceAndTimeToTurn()
+        
+        return LiquidGlassCard(intensity: 0.9, cornerRadius: 18, shadowIntensity: 0.25) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Next Turn", systemImage: "location.north.line")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.secondary)
+                        
+                        if let statusLine {
+                            Text(statusLine)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    Spacer(minLength: 12)
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            showNavigationTurnCard = false
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundColor(Color(.tertiaryLabel))
+                            .padding(4)
+                    }
+                    .buttonStyle(.plain)
+                }
+                
+                Text(instruction)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.leading)
+                
+                if !nextStep.isEmpty {
+                    Text("Then: \(nextStep)")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+            .padding(.vertical, 16)
+            .padding(.horizontal, 18)
+        }
+    }
+    
+    private func formattedDistanceAndTimeToTurn() -> String? {
+        let distanceMeters = navigationManager.distanceToNextTurnMeters
+        let timeSeconds = navigationManager.timeToNextTurnSeconds
+        
+        var parts: [String] = []
+        if distanceMeters > 0 {
+            parts.append(formatDistance(meters: distanceMeters))
+        }
+        if timeSeconds > 0 {
+            if timeSeconds < 60 {
+                parts.append("<1 min")
+            } else {
+                parts.append("~\(max(1, timeSeconds / 60)) min")
+            }
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
     
     private func extractAndShowResults(from content: String) async {

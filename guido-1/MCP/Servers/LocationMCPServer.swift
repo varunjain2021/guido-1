@@ -147,20 +147,33 @@ public class LocationMCPServer {
     private func getDirectionsTool() -> MCPTool {
         return MCPTool(
             name: "get_directions",
-            description: "Get a directions summary and Google Maps link with estimated travel time",
+            description: "Get directions to a destination. Can provide a Google Maps link OR start hands-free turn-by-turn navigation with Guido's voice guidance. ALWAYS ask the user first if they want a link or hands-free guidance. Use preview_only=true to fetch ETA + distance for that initial question without sending a Google Maps link yet.",
             inputSchema: MCPToolInputSchema(
                 properties: [
                     "destination": MCPPropertySchema(
                         type: "string",
                         description: "The destination address or place name"
                     ),
+                    "origin": MCPPropertySchema(
+                        type: "string",
+                        description: "Optional origin address or place name (defaults to current location)"
+                    ),
                     "transportation_mode": MCPPropertySchema(
                         type: "string",
                         description: "Mode of transportation",
                         enumValues: ["walking", "driving", "transit", "cycling"]
+                    ),
+                    "navigation_mode": MCPPropertySchema(
+                        type: "string",
+                        description: "Whether to provide a Google Maps link ('link') or start hands-free turn-by-turn navigation ('hands_free'). ALWAYS ask the user first which they prefer.",
+                        enumValues: ["link", "hands_free"]
+                    ),
+                    "preview_only": MCPPropertySchema(
+                        type: "boolean",
+                        description: "If true, return only a route overview (time + distance) so you can tell the user before they choose link vs. hands-free."
                     )
                 ],
-                required: ["destination", "transportation_mode"]
+                required: ["destination", "transportation_mode", "navigation_mode"]
             )
         )
     }
@@ -494,6 +507,70 @@ public class LocationMCPServer {
         }
     }
     
+    private func resolveCoordinate(for query: String) async -> (coordinate: CLLocationCoordinate2D, address: String)? {
+        let geocoder = CLGeocoder()
+        if let placemark = try? await geocoder.geocodeAddressString(query).first,
+           let location = placemark.location {
+            let addressParts = [
+                placemark.name,
+                placemark.thoroughfare,
+                placemark.locality,
+                placemark.administrativeArea
+            ].compactMap { $0 }
+            let address = addressParts.isEmpty ? query : addressParts.joined(separator: ", ")
+            return (coordinate: location.coordinate, address: address)
+        }
+        
+        if let google = googlePlacesRoutesService,
+           let candidate = try? await google.searchText(query: query, maxResults: 1).first {
+            return (
+                coordinate: CLLocationCoordinate2D(latitude: candidate.latitude, longitude: candidate.longitude),
+                address: candidate.formattedAddress
+            )
+        }
+        
+        return nil
+    }
+    
+    private func sampleRouteCoordinates(_ coordinates: [CLLocationCoordinate2D], desiredCount: Int) -> [CLLocationCoordinate2D] {
+        guard coordinates.count > desiredCount, desiredCount > 1 else {
+            return coordinates
+        }
+        var samples: [CLLocationCoordinate2D] = []
+        let step = Double(coordinates.count - 1) / Double(desiredCount - 1)
+        for i in 0..<desiredCount {
+            let index = min(Int(round(Double(i) * step)), coordinates.count - 1)
+            samples.append(coordinates[index])
+        }
+        return samples
+    }
+    
+    private func preferredSearchRadius(for travelMode: String) -> Int {
+        switch travelMode.lowercased() {
+        case "walking":
+            return 600   // ~0.4 miles
+        case "cycling":
+            return 1200  // ~0.75 miles
+        case "transit":
+            return 1500
+        default: // driving and fallback
+            return 2000  // ~1.25 miles
+        }
+    }
+    
+    private func maxDetourDurationSeconds(for travelMode: String) -> Int {
+        switch travelMode.lowercased() {
+        case "walking":
+            return 300 // 5 minutes walking
+        case "cycling":
+            return 300
+        case "transit":
+            return 240 // keep detours shorter when on transit schedules
+        default:
+            return 300 // driving/cycling fallback
+        }
+    }
+    
     private func executeGetUserLocation(_ request: MCPCallToolRequest) async -> MCPCallToolResponse {
         do {
             guard let locationManager = locationManager else {
@@ -590,11 +667,38 @@ public class LocationMCPServer {
                 throw LocationMCPError.invalidParameters("Missing transportation_mode parameter")
             }
             
-            // Use LLM-first intelligent directions
+            let previewOnly = (arguments["preview_only"] as? Bool) ?? false
+            
+            // Optional explicit origin override
+            let originOverride = arguments["origin"] as? String
+            
+            // Check navigation mode - default to "link" for backward compatibility
+            let navigationMode = arguments["navigation_mode"] as? String ?? "link"
+            
+            if previewOnly {
+                return await performIntelligentDirections(
+                    destination: destination,
+                    transportationMode: transportationMode,
+                    context: arguments,
+                    originOverride: originOverride,
+                    previewOnly: true
+                )
+            }
+            
+            // Handle hands-free navigation mode
+            if navigationMode == "hands_free" {
+                return await performHandsFreeNavigation(
+                    destination: destination,
+                    transportationMode: transportationMode
+                )
+            }
+            
+            // Use LLM-first intelligent directions for link mode
             return await performIntelligentDirections(
                 destination: destination,
                 transportationMode: transportationMode,
-                context: arguments
+                context: arguments,
+                originOverride: originOverride
             )
             
         } catch {
@@ -606,13 +710,202 @@ public class LocationMCPServer {
         }
     }
     
+    /// Starts hands-free turn-by-turn navigation using NavigationManager
+    private func performHandsFreeNavigation(
+        destination: String,
+        transportationMode: String
+    ) async -> MCPCallToolResponse {
+        print("🗺️ [LocationMCPServer] Starting hands-free navigation to: \(destination)")
+        
+        // Get current location from main actor
+        let locationData: (location: CLLocation, address: String?)? = await MainActor.run {
+            guard let locationManager = locationManager,
+                  let currentLocation = locationManager.currentLocation else {
+                return nil
+            }
+            return (currentLocation, locationManager.currentAddress)
+        }
+        
+        guard let locationData = locationData else {
+            print("❌ [LocationMCPServer] Current location not available for hands-free navigation")
+            return MCPCallToolResponse(
+                content: [MCPContent(text: "{\"success\":false,\"error\":\"Current location not available. Please ensure location services are enabled.\"}")],
+                isError: true
+            )
+        }
+        
+        let currentLocation = locationData.location
+        let originAddress = locationData.address
+        
+        // Geocode destination to get coordinates
+        let geocoder = CLGeocoder()
+        do {
+            let placemarks = try await geocoder.geocodeAddressString(destination)
+            guard let placemark = placemarks.first,
+                  let destinationLocation = placemark.location else {
+                print("❌ [LocationMCPServer] Could not geocode destination: \(destination)")
+                return MCPCallToolResponse(
+                    content: [MCPContent(text: "{\"success\":false,\"error\":\"Could not find location for: \(destination)\"}")],
+                    isError: true
+                )
+            }
+            
+            let destinationAddress = [
+                placemark.name,
+                placemark.thoroughfare,
+                placemark.locality,
+                placemark.administrativeArea,
+                placemark.postalCode
+            ].compactMap { $0 }.joined(separator: ", ")
+            
+            let travelMode: TravelMode
+            switch transportationMode.lowercased() {
+            case "walking": travelMode = .walking
+            case "cycling": travelMode = .cycling
+            case "transit": travelMode = .transit
+            default: travelMode = .driving
+            }
+            
+            let activeJourney: NavigationJourney? = await MainActor.run {
+                if NavigationManager.shared.isNavigating {
+                    return NavigationManager.shared.activeJourney
+                }
+                return nil
+            }
+            
+            if let journey = activeJourney {
+                let latMatch = abs((journey.destinationLat ?? 0) - destinationLocation.coordinate.latitude) < 0.0001
+                let lngMatch = abs((journey.destinationLng ?? 0) - destinationLocation.coordinate.longitude) < 0.0001
+                if latMatch && lngMatch {
+                    print("🗺️ [LocationMCPServer] Hands-free navigation already active to: \(journey.destinationName ?? journey.destinationAddress)")
+                    
+                    let payload: [String: Any] = [
+                        "success": true,
+                        "navigation_started": false,
+                        "navigation_already_active": true,
+                        "destination": journey.destinationName ?? journey.destinationAddress,
+                        "destination_address": journey.destinationAddress,
+                        "distance": journey.formattedDistance,
+                        "estimated_time": journey.formattedTime,
+                        "travel_mode": journey.travelMode.displayName,
+                        "journey_id": journey.id.uuidString,
+                        "how_to_stop": "Say 'stop navigating', 'end navigation', or 'cancel' anytime to stop."
+                    ]
+                    
+                    if let jsonData = try? JSONSerialization.data(withJSONObject: payload),
+                       let jsonString = String(data: jsonData, encoding: .utf8) {
+                        return MCPCallToolResponse(
+                            content: [MCPContent(text: jsonString)],
+                            isError: false
+                        )
+                    } else {
+                        return MCPCallToolResponse(
+                            content: [MCPContent(text: "{\"success\":true,\"navigation_already_active\":true}")],
+                            isError: false
+                        )
+                    }
+                } else {
+                    print("🗺️ [LocationMCPServer] Rerouting hands-free navigation to new destination")
+                    await NavigationManager.shared.stopNavigation(cancelled: true)
+                }
+            }
+            
+            // Get canonical distance/time from Routes API using the requested transportation mode
+            var routeSummaryOverride: GooglePlacesRoutesService.RouteSummary?
+            if let google = googlePlacesRoutesService {
+                do {
+                    routeSummaryOverride = try await google.computeRoute(
+                        to: destinationAddress.isEmpty ? destination : destinationAddress,
+                        mode: transportationMode,
+                        originCoordinate: currentLocation.coordinate
+                    )
+                } catch {
+                    print("⚠️ [LocationMCPServer] Routes summary for hands-free navigation failed: \(error)")
+                }
+            }
+            
+            // Start navigation using NavigationManager (SDK may be driving-only, but summary respects transportation_mode)
+            let result = await NavigationManager.shared.startNavigation(
+                to: destinationLocation.coordinate,
+                destinationName: placemark.name,
+                destinationAddress: destinationAddress.isEmpty ? destination : destinationAddress,
+                travelMode: travelMode,
+                from: currentLocation.coordinate,
+                originAddress: originAddress,
+                routeDistanceMetersOverride: routeSummaryOverride?.distanceMeters,
+                routeTimeSecondsOverride: routeSummaryOverride?.durationSeconds,
+                initialStepsCountOverride: nil
+            )
+            
+            switch result {
+            case .success(let journey):
+                print("✅ [LocationMCPServer] Hands-free navigation started to \(destination)")
+                let rawDistance = journey.totalDistanceMeters ?? routeSummaryOverride?.distanceMeters ?? 0
+                let rawDuration = journey.totalTimeSeconds ?? routeSummaryOverride?.durationSeconds ?? 0
+                let avgSpeedMps = rawDuration > 0 ? Double(rawDistance) / Double(rawDuration) : 0
+                let avgSpeedMph = avgSpeedMps * 2.23694
+                
+                let payload: [String: Any] = [
+                    "success": true,
+                    "navigation_started": true,
+                    "destination": journey.destinationName ?? journey.destinationAddress,
+                    "destination_address": journey.destinationAddress,
+                    "distance": journey.formattedDistance,
+                    "estimated_time": journey.formattedTime,
+                    "travel_mode": journey.travelMode.displayName,
+                    "journey_id": journey.id.uuidString,
+                    "distance_meters": rawDistance,
+                    "duration_seconds": rawDuration,
+                    "average_speed_mph": avgSpeedMph,
+                    "how_to_stop": "Say 'stop navigating', 'end navigation', or 'cancel' anytime to stop."
+                ]
+                
+                if let jsonData = try? JSONSerialization.data(withJSONObject: payload),
+                   let jsonString = String(data: jsonData, encoding: .utf8) {
+                    return MCPCallToolResponse(
+                        content: [MCPContent(text: jsonString)],
+                        isError: false
+                    )
+                } else {
+                    return MCPCallToolResponse(
+                        content: [MCPContent(text: "{\"success\":true,\"navigation_started\":true}")],
+                        isError: false
+                    )
+                }
+                
+            case .failure(let error):
+                print("❌ [LocationMCPServer] Failed to start hands-free navigation: \(error.localizedDescription)")
+                return MCPCallToolResponse(
+                    content: [MCPContent(text: "{\"success\":false,\"error\":\"Could not start navigation: \(error.localizedDescription)\"}")],
+                    isError: true
+                )
+            }
+            
+        } catch {
+            print("❌ [LocationMCPServer] Geocoding failed: \(error)")
+            return MCPCallToolResponse(
+                content: [MCPContent(text: "{\"success\":false,\"error\":\"Could not find location for: \(destination). Error: \(error.localizedDescription)\"}")],
+                isError: true
+            )
+        }
+    }
+    
     private func performIntelligentDirections(
         destination: String,
         transportationMode: String,
-        context: [String: Any]
+        context: [String: Any],
+        originOverride: String? = nil,
+        previewOnly: Bool = false
     ) async -> MCPCallToolResponse {
         do {
             let locationContext = await getCurrentLocationContext()
+            var originCoordinateOverride: CLLocationCoordinate2D?
+            var originAddressOverride: String?
+            if let originOverride, !originOverride.isEmpty,
+               let resolved = await resolveCoordinate(for: originOverride) {
+                originCoordinateOverride = resolved.coordinate
+                originAddressOverride = resolved.address
+            }
             
             // Gather data for intelligent directions
             var destinationData: [String: Any]? = nil
@@ -666,11 +959,19 @@ public class LocationMCPServer {
                         
                         // Step 2: Get route information
                         do {
-                            let summary = try await google.computeRoute(to: resolvedPlace.formattedAddress, mode: transportationMode)
+                            let summary = try await google.computeRoute(
+                                to: resolvedPlace.formattedAddress,
+                                mode: transportationMode,
+                                originCoordinate: originCoordinateOverride
+                            )
                             routeSummary = summary
                             
                             mapsURLs = await MainActor.run {
-                                google.buildDirectionsURLs(to: resolvedPlace.formattedAddress, mode: transportationMode)
+                                google.buildDirectionsURLs(
+                                    to: resolvedPlace.formattedAddress,
+                                    mode: transportationMode,
+                                    originAddress: originAddressOverride
+                                )
                             }
                         } catch {
                             conflictingData.append("Route calculation failed: \(error.localizedDescription)")
@@ -678,10 +979,18 @@ public class LocationMCPServer {
                     } else {
                         // Try with original destination string
                         do {
-                            let summary = try await google.computeRoute(to: destination, mode: transportationMode)
+                            let summary = try await google.computeRoute(
+                                to: destination,
+                                mode: transportationMode,
+                                originCoordinate: originCoordinateOverride
+                            )
                             routeSummary = summary
                             mapsURLs = await MainActor.run {
-                                google.buildDirectionsURLs(to: destination, mode: transportationMode)
+                                google.buildDirectionsURLs(
+                                    to: destination,
+                                    mode: transportationMode,
+                                    originAddress: originAddressOverride
+                                )
                             }
                         } catch {
                             conflictingData.append("Could not find or route to destination: \(destination)")
@@ -717,7 +1026,11 @@ public class LocationMCPServer {
             
             if mapsURLs == nil {
                 mapsURLs = await MainActor.run {
-                    google.buildDirectionsURLs(to: summary.destination, mode: transportationMode)
+                    google.buildDirectionsURLs(
+                        to: summary.destination,
+                        mode: transportationMode,
+                        originAddress: originAddressOverride
+                    )
                 }
             }
             
@@ -743,6 +1056,51 @@ public class LocationMCPServer {
                 }
             }
             
+            let durationMinutes = max(1, Int(round(Double(summary.durationSeconds) / 60.0)))
+            let displayDestination = (destinationData?["name"] as? String) ?? summary.destination
+            let hours = durationMinutes / 60
+            let minutesRemainder = durationMinutes % 60
+            let etaText = hours > 0 ? "\(hours) hr \(minutesRemainder) min" : "\(durationMinutes) min"
+            let distanceMiles = Double(summary.distanceMeters) / 1609.34
+            let distanceText: String
+            if distanceMiles >= 0.1 {
+                distanceText = String(format: "%.1f mi", distanceMiles)
+            } else if summary.distanceMeters >= 1000 {
+                distanceText = String(format: "%.1f km", Double(summary.distanceMeters) / 1000.0)
+            } else {
+                distanceText = "\(summary.distanceMeters) m"
+            }
+            
+            if previewOnly {
+                var previewPayload: [String: Any] = [
+                    "title": "Route Overview",
+                    "preview_only": true,
+                    "destination": displayDestination,
+                    "transportation_mode": summary.travelMode,
+                    "eta_minutes": durationMinutes,
+                    "distance_meters": summary.distanceMeters
+                ]
+                if let resolvedAddress = destinationData?["address"] as? String {
+                    previewPayload["destination_address"] = resolvedAddress
+                }
+                if let originAddressOverride {
+                    previewPayload["origin_address"] = originAddressOverride
+                }
+                let prompt = "It's about \(distanceText) and should take around \(etaText). Would you like me to open Google Maps for you, or would you prefer I guide you hands-free?"
+                previewPayload["voice_message"] = prompt
+                previewPayload["preference_prompt"] = prompt
+                previewPayload["assistant_guidance"] = "Tell the user: \(prompt)"
+                previewPayload["summary"] = summary.summaryText
+                
+                let payloadData = try JSONSerialization.data(withJSONObject: previewPayload)
+                let payloadText = String(data: payloadData, encoding: .utf8) ?? "{}"
+                print("[Directions] ✅ Generated preview payload: \(payloadText)")
+                return MCPCallToolResponse(
+                    content: [MCPContent(text: payloadText)],
+                    isError: false
+                )
+            }
+            
             guard let webURL = mapsURLs?.web else {
                 print("[Directions] ❌ Failed to produce Google Maps URL for destination '\(summary.destination)'")
                 return MCPCallToolResponse(
@@ -751,8 +1109,6 @@ public class LocationMCPServer {
                 )
             }
             
-            let durationMinutes = max(1, Int(round(Double(summary.durationSeconds) / 60.0)))
-            let displayDestination = (destinationData?["name"] as? String) ?? summary.destination
             var responsePayload: [String: Any] = [
                 "title": "Directions",
                 "summary": summary.summaryText,
@@ -760,6 +1116,8 @@ public class LocationMCPServer {
                 "transportation_mode": summary.travelMode,
                 "eta_minutes": durationMinutes,
                 "distance_meters": summary.distanceMeters,
+                "eta_text": etaText,
+                "distance_text": distanceText,
                 "maps_url": webURL.absoluteString
             ]
             if !summary.stepInstructions.isEmpty {
@@ -772,6 +1130,9 @@ public class LocationMCPServer {
             
             if let resolvedAddress = destinationData?["address"] as? String {
                 responsePayload["destination_address"] = resolvedAddress
+            }
+            if let originAddressOverride {
+                responsePayload["origin_address"] = originAddressOverride
             }
             
             let payloadData = try JSONSerialization.data(withJSONObject: responsePayload)
@@ -1329,79 +1690,125 @@ If near the destination, how far from it is okay (e.g., within 300 m)?
     ) async -> MCPCallToolResponse {
         do {
             let locationContext = await getCurrentLocationContext()
+            let travelMode = (context["transportation_mode"] as? String) ?? "driving"
+            let searchRadius = preferredSearchRadius(for: travelMode)
+            let maxDetourSeconds = maxDetourDurationSeconds(for: travelMode)
+            guard let google = googlePlacesRoutesService else {
+                return MCPCallToolResponse(
+                    content: [MCPContent(text: "Google Places service unavailable")],
+                    isError: true
+                )
+            }
             
-            // Gather route data from multiple sources
-            var routePlaces: [Any]? = nil
-            var webInsights: String? = nil
-            var travelMode: String? = nil
+            let routeDetails = try await google.computeRouteDetails(to: destination, mode: travelMode)
+            let sampleCenters = sampleRouteCoordinates(routeDetails.polylineCoordinates, desiredCount: 5)
             
-            // Try Google Places route search first
-            if let google = googlePlacesRoutesService {
-                do {
-                    // Resolve destination
-                    let destinationCandidates = try await google.searchText(query: destination, maxResults: 1)
-                    guard let destinationPlace = destinationCandidates.first else {
-                        return MCPCallToolResponse(
-                            content: [MCPContent(text: "Could not find destination: \(destination)")],
-                            isError: true
-                        )
+            struct RoutePlaceCandidate {
+                let candidate: GooglePlacesRoutesService.PlaceCandidate
+                var distanceFromOriginMeters: Int?
+                var durationFromOriginSeconds: Int?
+                var distanceToDestinationMeters: Int?
+                var durationToDestinationSeconds: Int?
+                
+                func asDictionary() -> [String: Any] {
+                    var dict: [String: Any] = [
+                        "name": candidate.name,
+                        "address": candidate.formattedAddress,
+                        "latitude": candidate.latitude,
+                        "longitude": candidate.longitude,
+                        "rating": candidate.rating ?? NSNull(),
+                        "distance_from_current_meters": distanceFromOriginMeters ?? candidate.distanceMeters
+                    ]
+                    if let durationFromOriginSeconds {
+                        dict["duration_from_current_seconds"] = durationFromOriginSeconds
                     }
-                    
-                    // Search around destination for now (route search would need more complex implementation)
-                    let routeCandidates = try await google.searchText(
-                        query: userQuery,
-                        maxResults: 5
-                    )
-                    
-                    if !routeCandidates.isEmpty {
-                        routePlaces = routeCandidates.map { candidate in
-                            [
-                                "name": candidate.name,
-                                "address": candidate.formattedAddress,
-                                "distance_from_current": candidate.distanceMeters,
-                                "latitude": candidate.latitude,
-                                "longitude": candidate.longitude,
-                                "is_open": candidate.isOpen ?? false,
-                                "business_status": candidate.businessStatus ?? "unknown",
-                                "rating": candidate.rating ?? 0.0,
-                                "has_business_details": candidate.hasBusinessDetails
-                            ]
-                        }
+                    if let distanceToDestinationMeters {
+                        dict["distance_to_destination_meters"] = distanceToDestinationMeters
                     }
-                    
-                } catch {
-                    print("⚠️ [LocationMCPServer] Google route search failed: \(error)")
+                    if let durationToDestinationSeconds {
+                        dict["duration_to_destination_seconds"] = durationToDestinationSeconds
+                    }
+                    return dict
                 }
             }
             
-            // Get additional insights from web search
-            if let locationSearchService = locationSearchService {
-                let routeQuery = "\(userQuery) between \(locationContext) and \(destination)"
-                let webResult = await locationSearchService.findNearbyServices(serviceType: userQuery, query: routeQuery)
-                webInsights = webResult.summary
+            var aggregatedCandidates: [String: RoutePlaceCandidate] = [:]
+            for center in sampleCenters {
+                let localResults = try await google.searchText(
+                    query: userQuery,
+                    maxResults: 5,
+                    locationBiasCenter: center,
+                    radiusMeters: searchRadius
+                )
+                
+                for candidate in localResults {
+                    let key = candidate.formattedAddress.lowercased()
+                    if aggregatedCandidates[key] == nil {
+                        aggregatedCandidates[key] = RoutePlaceCandidate(candidate: candidate)
+                    }
+                }
             }
             
-            // Use LLM to synthesize intelligent route recommendations
+            if aggregatedCandidates.isEmpty {
+                return MCPCallToolResponse(
+                    content: [MCPContent(text: "No \(userQuery) found along the route to \(destination)")],
+                    isError: false
+                )
+            }
+            
+            let sortedCandidates = aggregatedCandidates
+                .map { $0.value }
+                .sorted { $0.candidate.distanceMeters < $1.candidate.distanceMeters }
+            let limitedCandidates = Array(sortedCandidates.prefix(5))
+            var enrichedEntries: [RoutePlaceCandidate] = []
+            
+            for var entry in limitedCandidates {
+                if let startSummary = try? await google.computeRoute(
+                    to: entry.candidate.formattedAddress,
+                    mode: travelMode
+                ) {
+                    entry.distanceFromOriginMeters = startSummary.distanceMeters
+                    entry.durationFromOriginSeconds = startSummary.durationSeconds
+                }
+                if let destSummary = try? await google.computeRoute(
+                    to: destination,
+                    mode: travelMode,
+                    originCoordinate: CLLocationCoordinate2D(latitude: entry.candidate.latitude, longitude: entry.candidate.longitude)
+                ) {
+                    entry.distanceToDestinationMeters = destSummary.distanceMeters
+                    entry.durationToDestinationSeconds = destSummary.durationSeconds
+                }
+                enrichedEntries.append(entry)
+            }
+            
+            let filteredEntries = enrichedEntries.filter { entry in
+                guard let detourSeconds = entry.durationFromOriginSeconds else {
+                    return false
+                }
+                return detourSeconds <= maxDetourSeconds
+            }
+            
+            let finalEntries = filteredEntries.isEmpty ? enrichedEntries : filteredEntries
+            let routePlaces = finalEntries.map { $0.asDictionary() }
+            
             guard let openAIChatService = openAIChatService else {
-                // Fallback without LLM
-                if let places = routePlaces, !places.isEmpty {
-                    return MCPCallToolResponse(
-                        content: [MCPContent(text: "Found \(places.count) \(userQuery) on the way to \(destination)")],
-                        isError: false
-                    )
-                } else {
-                    return MCPCallToolResponse(
-                        content: [MCPContent(text: "No \(userQuery) found on route to \(destination)")],
-                        isError: false
-                    )
-                }
+                let summaryText = routePlaces
+                    .compactMap { dict -> String? in
+                        guard let name = dict["name"] as? String,
+                              let dist = dict["distance_from_current_meters"] as? Int else { return nil }
+                        let km = Double(dist) / 1000.0
+                        return "- \(name) (\(String(format: "%.1f", km)) km from current location)"
+                    }
+                    .joined(separator: "\n")
+                let fallback = "Found \(routePlaces.count) \(userQuery) options on the way:\n\(summaryText)"
+                return MCPCallToolResponse(content: [MCPContent(text: fallback)], isError: false)
             }
             
             let intelligentResponse = try await openAIChatService.synthesizeRouteRecommendations(
                 userQuery: userQuery,
                 destination: destination,
                 routePlaces: routePlaces,
-                webInsights: webInsights,
+                webInsights: nil,
                 travelMode: travelMode,
                 currentLocation: locationContext
             )

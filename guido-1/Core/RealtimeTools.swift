@@ -73,6 +73,7 @@ class RealtimeToolManager: ObservableObject {
             getLocationTool(),
             getNearbyPlacesTool(),
             getDirectionsTool(),
+            getStopNavigationTool(),
             getFindPlacesOnRouteTool(),
             getWeatherTool(),
             getCalendarTool(),
@@ -139,20 +140,44 @@ class RealtimeToolManager: ObservableObject {
     private static func getDirectionsTool() -> RealtimeToolDefinition {
         return RealtimeToolDefinition(
             name: "get_directions",
-            description: "Get a directions summary and a Google Maps link with estimated travel time",
+            description: "Get directions to a destination. Use navigation_mode 'link' for a Google Maps link, or 'hands_free' to start live turn-by-turn voice navigation where Guido announces each turn. Provide an origin if the user wants directions from somewhere other than their current location. Call with preview_only=true to fetch ETA + distance before the user chooses link vs. hands-free.",
             parameters: ToolParameters(
                 properties: [
                     "destination": ParameterProperty(
                         type: "string",
                         description: "The destination address or place name"
                     ),
+                    "origin": ParameterProperty(
+                        type: "string",
+                        description: "Optional origin address/place if different from the user's current location"
+                    ),
                     "transportation_mode": ParameterProperty(
                         type: "string",
                         description: "Mode of transportation",
                         enumValues: ["walking", "driving", "transit", "cycling"]
+                    ),
+                    "navigation_mode": ParameterProperty(
+                        type: "string",
+                        description: "How to provide directions: 'link' opens Google Maps, 'hands_free' starts live voice-guided navigation (user can say 'stop navigating' to end)",
+                        enumValues: ["link", "hands_free"]
+                    ),
+                    "preview_only": ParameterProperty(
+                        type: "boolean",
+                        description: "If true, return only a route overview (time + distance) to help ask the user if they want a link or hands-free, without sending a Maps link yet."
                     )
                 ],
-                required: ["destination", "transportation_mode"]
+                required: ["destination", "transportation_mode", "navigation_mode"]
+            )
+        )
+    }
+    
+    private static func getStopNavigationTool() -> RealtimeToolDefinition {
+        return RealtimeToolDefinition(
+            name: "stop_navigation",
+            description: "Stop active hands-free navigation. Call this when user says 'stop navigating', 'end navigation', 'cancel navigation', 'I'm done', 'we're here', or similar phrases indicating they want to stop.",
+            parameters: ToolParameters(
+                properties: [:],
+                required: []
             )
         )
     }
@@ -634,6 +659,9 @@ class RealtimeToolManager: ObservableObject {
         case "get_directions":
             return await executeDirectionsTool(parameters: parameters)
         
+        case "stop_navigation":
+            return await executeStopNavigation()
+        
         case "find_places_on_route":
             return await executeFindPlacesOnRoute(parameters: parameters)
             
@@ -755,16 +783,44 @@ class RealtimeToolManager: ObservableObject {
               let transportMode = parameters["transportation_mode"] as? String else {
             return ToolResult(success: false, data: "Missing required parameters")
         }
+        
+        let navigationMode = parameters["navigation_mode"] as? String ?? "link"
+        let originOverride = parameters["origin"] as? String
+        let previewOnly = parameters["preview_only"] as? Bool ?? false
+        
+        if previewOnly {
+            let summary = "Route to \(destination) via \(transportMode)."
+            return ToolResult(success: true, data: [
+                "preview_only": true,
+                "destination": destination,
+                "transportation_mode": transportMode,
+                "summary": summary
+            ])
+        }
+        
+        // Handle hands-free navigation mode
+        if navigationMode == "hands_free" {
+            return await executeHandsFreeNavigation(destination: destination, transportMode: transportMode)
+        }
 
+        // Default: return Google Maps link
         let urlMode = normalizeTransportModeForURL(transportMode)
 
         guard let encodedDestination = destination.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
             return ToolResult(success: false, data: "Unable to encode destination for directions URL")
         }
 
-        let webURLString = "https://www.google.com/maps/dir/?api=1&destination=\(encodedDestination)&travelmode=\(urlMode)"
-        let appURLString = "comgooglemaps://?daddr=\(encodedDestination)&directionsmode=\(urlMode)"
-        let summary = "Route to \(destination) via \(transportMode). Open Google Maps to see turn-by-turn instructions."
+        var webURLString = "https://www.google.com/maps/dir/?api=1&destination=\(encodedDestination)&travelmode=\(urlMode)"
+        var appURLString = "comgooglemaps://?daddr=\(encodedDestination)&directionsmode=\(urlMode)"
+        if let originOverride,
+           let encodedOrigin = originOverride.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            webURLString += "&origin=\(encodedOrigin)"
+            appURLString += "&saddr=\(encodedOrigin)"
+        }
+        var summary = "Route to \(destination) via \(transportMode). Open Google Maps to see turn-by-turn instructions."
+        if let originOverride {
+            summary = "Route from \(originOverride) to \(destination) via \(transportMode). Open Google Maps for turn-by-turn directions."
+        }
 
         var payload: [String: Any] = [
             "title": "Directions",
@@ -776,9 +832,103 @@ class RealtimeToolManager: ObservableObject {
 
         payload["maps_app_url"] = appURLString
 
-        print("[Directions] ℹ️ Legacy directions payload generated for '\(destination)' (mode: \(transportMode))")
+        if let originOverride {
+            payload["origin"] = originOverride
+        }
+        
+        print("[Directions] ℹ️ Legacy directions payload generated for '\(destination)' (mode: \(transportMode), origin: \(originOverride ?? "current location"))")
 
         return ToolResult(success: true, data: payload)
+    }
+    
+    private func executeHandsFreeNavigation(destination: String, transportMode: String) async -> ToolResult {
+        guard let locationManager = locationManager,
+              let currentLocation = locationManager.currentLocation else {
+            return ToolResult(success: false, data: "Current location not available. Please ensure location services are enabled.")
+        }
+        
+        // Resolve destination coordinates using geocoding
+        let geocoder = CLGeocoder()
+        
+        do {
+            let placemarks = try await geocoder.geocodeAddressString(destination)
+            guard let placemark = placemarks.first,
+                  let destinationLocation = placemark.location else {
+                return ToolResult(success: false, data: "Could not find location for: \(destination)")
+            }
+            
+            let destinationCoord = destinationLocation.coordinate
+            let destinationAddress = [
+                placemark.name,
+                placemark.thoroughfare,
+                placemark.locality,
+                placemark.administrativeArea,
+                placemark.postalCode
+            ].compactMap { $0 }.joined(separator: ", ")
+            
+            let travelMode: TravelMode
+            switch transportMode.lowercased() {
+            case "walking": travelMode = .walking
+            case "cycling": travelMode = .cycling
+            case "transit": travelMode = .transit
+            default: travelMode = .driving
+            }
+            
+            // Start navigation
+            let result = await NavigationManager.shared.startNavigation(
+                to: destinationCoord,
+                destinationName: placemark.name,
+                destinationAddress: destinationAddress.isEmpty ? destination : destinationAddress,
+                travelMode: travelMode,
+                from: currentLocation.coordinate,
+                originAddress: locationManager.currentAddress
+            )
+            
+            switch result {
+            case .success(let journey):
+                let destName = journey.destinationName ?? journey.destinationAddress
+                let payload: [String: Any] = [
+                    "navigation_started": true,
+                    "destination": destName,
+                    "destination_address": journey.destinationAddress,
+                    "distance": journey.formattedDistance,
+                    "estimated_time": journey.formattedTime,
+                    "travel_mode": journey.travelMode.displayName,
+                    "journey_id": journey.id.uuidString,
+                    "how_to_stop": "Say 'stop navigating', 'end navigation', or 'cancel' anytime to stop."
+                ]
+                print("[Navigation] ✅ Hands-free navigation started to \(destination)")
+                return ToolResult(success: true, data: payload)
+                
+            case .failure(let error):
+                print("[Navigation] ❌ Failed to start navigation: \(error.localizedDescription)")
+                return ToolResult(success: false, data: "Could not start navigation: \(error.localizedDescription)")
+            }
+            
+        } catch {
+            print("[Navigation] ❌ Geocoding failed: \(error)")
+            return ToolResult(success: false, data: "Could not find location for: \(destination). Error: \(error.localizedDescription)")
+        }
+    }
+    
+    private func executeStopNavigation() async -> ToolResult {
+        let wasNavigating = NavigationManager.shared.isNavigating
+        let activeJourney = NavigationManager.shared.activeJourney
+        
+        if wasNavigating {
+            await NavigationManager.shared.stopNavigation(cancelled: true)
+            let destName = activeJourney?.destinationName ?? activeJourney?.destinationAddress ?? "your destination"
+            return ToolResult(success: true, data: [
+                "navigation_stopped": true,
+                "previous_destination": destName,
+                "voice_message": "Navigation ended. Let me know if you need directions somewhere else or have any other questions!"
+            ])
+        } else {
+            return ToolResult(success: true, data: [
+                "navigation_stopped": false,
+                "voice_message": "You don't have active navigation right now. Would you like directions somewhere?"
+            ])
+        }
     }
     
     private func executeFindPlacesOnRoute(parameters: [String: Any]) async -> ToolResult {

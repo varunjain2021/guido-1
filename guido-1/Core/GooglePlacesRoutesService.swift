@@ -46,6 +46,11 @@ class GooglePlacesRoutesService: ObservableObject {
         let summaryText: String
         let stepInstructions: [String]
     }
+    
+    public struct RouteDetails {
+        let summary: RouteSummary
+        let polylineCoordinates: [CLLocationCoordinate2D]
+    }
     private let apiKey: String
     private let locationManager: LocationManager
     private let session: URLSession = .shared
@@ -57,15 +62,25 @@ class GooglePlacesRoutesService: ObservableObject {
 
     // MARK: - URL Builders
 
-    func buildDirectionsURLs(to destinationAddress: String, mode: String) -> (web: URL, app: URL?)? {
+    func buildDirectionsURLs(
+        to destinationAddress: String,
+        mode: String,
+        originAddress: String? = nil
+    ) -> (web: URL, app: URL?)? {
         guard let encodedDest = destinationAddress.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
             print("[Directions] ❌ Failed to percent-encode destination: \(destinationAddress)")
             return nil
         }
-
+        
         let travelModeQuery = mapModeForURL(mode)
-        let webURLString = "https://www.google.com/maps/dir/?api=1&destination=\(encodedDest)&travelmode=\(travelModeQuery)"
-        let appURLString = "comgooglemaps://?daddr=\(encodedDest)&directionsmode=\(travelModeQuery)"
+        var webURLString = "https://www.google.com/maps/dir/?api=1&destination=\(encodedDest)&travelmode=\(travelModeQuery)"
+        var appURLString = "comgooglemaps://?daddr=\(encodedDest)&directionsmode=\(travelModeQuery)"
+        
+        if let originAddress,
+           let encodedOrigin = originAddress.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            webURLString += "&origin=\(encodedOrigin)"
+            appURLString += "&saddr=\(encodedOrigin)"
+        }
 
         guard let webURL = URL(string: webURLString) else {
             print("[Directions] ❌ Failed to build web directions URL from: \(webURLString)")
@@ -131,11 +146,21 @@ class GooglePlacesRoutesService: ObservableObject {
     
     // MARK: - Places (Text Search by name)
     
-    func searchText(query: String, maxResults: Int = 5) async throws -> [PlaceCandidate] {
-        guard let origin = locationManager.currentLocation else {
+    func searchText(
+        query: String,
+        maxResults: Int = 5,
+        locationBiasCenter: CLLocationCoordinate2D? = nil,
+        radiusMeters: Int = 3000
+    ) async throws -> [PlaceCandidate] {
+        let biasCenter: CLLocationCoordinate2D
+        if let overrideCenter = locationBiasCenter {
+            biasCenter = overrideCenter
+        } else if let origin = locationManager.currentLocation?.coordinate {
+            biasCenter = origin
+        } else {
             throw NSError(domain: "GooglePlacesRoutesService", code: 7, userInfo: [NSLocalizedDescriptionKey: "Location not available"])
         }
-        print("🔍 [GooglePlacesService] Text search for '\(query)' from location: \(origin.coordinate.latitude), \(origin.coordinate.longitude)")
+        print("🔍 [GooglePlacesService] Text search for '\(query)' from location: \(biasCenter.latitude), \(biasCenter.longitude)")
         let url = URL(string: "https://places.googleapis.com/v1/places:searchText")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -150,10 +175,10 @@ class GooglePlacesRoutesService: ObservableObject {
             "locationBias": [
                 "circle": [
                     "center": [
-                        "latitude": origin.coordinate.latitude,
-                        "longitude": origin.coordinate.longitude
+                        "latitude": biasCenter.latitude,
+                        "longitude": biasCenter.longitude
                     ],
-                    "radius": 3000
+                    "radius": radiusMeters
                 ]
             ]
         ]
@@ -186,7 +211,7 @@ class GooglePlacesRoutesService: ObservableObject {
             let gmapsUri = place["googleMapsUri"] as? String
             let nameText = ((place["displayName"] as? [String: Any])?["text"] as? String) ?? "Unknown"
             let addr = (place["formattedAddress"] as? String) ?? ""
-            let dist = computeDistanceMeters(from: origin.coordinate, to: CLLocationCoordinate2D(latitude: lat, longitude: lng))
+            let dist = computeDistanceMeters(from: biasCenter, to: CLLocationCoordinate2D(latitude: lat, longitude: lng))
             
             // Extract enhanced business data for LLM intelligence
             let isOpen = (place["currentOpeningHours"] as? [String: Any])?["openNow"] as? Bool
@@ -225,8 +250,12 @@ class GooglePlacesRoutesService: ObservableObject {
     
     // MARK: - Directions via Routes API
     
-    func computeRoute(to destinationAddress: String, mode: String) async throws -> RouteSummary {
-        guard let originLocation = locationManager.currentLocation else {
+    func computeRoute(
+        to destinationAddress: String,
+        mode: String,
+        originCoordinate: CLLocationCoordinate2D? = nil
+    ) async throws -> RouteSummary {
+        guard let originLocation = originCoordinate ?? locationManager.currentLocation?.coordinate else {
             throw NSError(domain: "GooglePlacesRoutesService", code: 4, userInfo: [NSLocalizedDescriptionKey: "Location not available"])
         }
         let travelMode = mapMode(mode)
@@ -241,8 +270,8 @@ class GooglePlacesRoutesService: ObservableObject {
             "origin": [
                 "location": [
                     "latLng": [
-                        "latitude": originLocation.coordinate.latitude,
-                        "longitude": originLocation.coordinate.longitude
+                        "latitude": originLocation.latitude,
+                        "longitude": originLocation.longitude
                     ]
                 ]
             ],
@@ -265,6 +294,53 @@ class GooglePlacesRoutesService: ObservableObject {
         }
         
         return try summarizeRoute(json: json, mode: mode, destination: destinationAddress)
+    }
+    
+    func computeRouteDetails(
+        to destinationAddress: String,
+        mode: String,
+        originCoordinate: CLLocationCoordinate2D? = nil
+    ) async throws -> RouteDetails {
+        guard let originLocation = originCoordinate ?? locationManager.currentLocation?.coordinate else {
+            throw NSError(domain: "GooglePlacesRoutesService", code: 4, userInfo: [NSLocalizedDescriptionKey: "Location not available"])
+        }
+        let travelMode = mapMode(mode)
+        let url = URL(string: "https://routes.googleapis.com/directions/v2:computeRoutes")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
+        request.setValue("routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.steps.navigationInstruction,routes.legs.steps.distanceMeters", forHTTPHeaderField: "X-Goog-FieldMask")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: Any] = [
+            "origin": [
+                "location": [
+                    "latLng": [
+                        "latitude": originLocation.latitude,
+                        "longitude": originLocation.longitude
+                    ]
+                ]
+            ],
+            "destination": [
+                "address": destinationAddress
+            ],
+            "travelMode": travelMode
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            let msg = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw NSError(domain: "GooglePlacesRoutesService", code: 5, userInfo: [NSLocalizedDescriptionKey: "Routes error: \(msg)"])
+        }
+        
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw NSError(domain: "GooglePlacesRoutesService", code: 6, userInfo: [NSLocalizedDescriptionKey: "Invalid Routes response"])
+        }
+        
+        let summary = try summarizeRoute(json: json, mode: mode, destination: destinationAddress)
+        let polyline = decodePolyline(from: json)
+        return RouteDetails(summary: summary, polylineCoordinates: polyline)
     }
     
     // MARK: - Helpers
@@ -363,6 +439,54 @@ class GooglePlacesRoutesService: ObservableObject {
             summaryText: summaryText,
             stepInstructions: tail
         )
+    }
+    
+    private func decodePolyline(from json: [String: Any]) -> [CLLocationCoordinate2D] {
+        guard let routes = json["routes"] as? [[String: Any]],
+              let first = routes.first,
+              let polylineDict = first["polyline"] as? [String: Any],
+              let encoded = polylineDict["encodedPolyline"] as? String else {
+            return []
+        }
+        return decodePolylineString(encoded)
+    }
+    
+    private func decodePolylineString(_ encoded: String) -> [CLLocationCoordinate2D] {
+        var coordinates: [CLLocationCoordinate2D] = []
+        let bytes = Array(encoded.utf8)
+        var index = 0
+        var latitude: Int32 = 0
+        var longitude: Int32 = 0
+        
+        while index < bytes.count {
+            var result: Int32 = 0
+            var shift: UInt32 = 0
+            var byte: UInt8
+            repeat {
+                byte = bytes[index] - 63
+                index += 1
+                result |= Int32(byte & 0x1F) << shift
+                shift += 5
+            } while byte >= 0x20 && index < bytes.count
+            let deltaLat = ((result & 1) != 0) ? ~(result >> 1) : (result >> 1)
+            latitude += deltaLat
+            
+            result = 0
+            shift = 0
+            repeat {
+                byte = bytes[index] - 63
+                index += 1
+                result |= Int32(byte & 0x1F) << shift
+                shift += 5
+            } while byte >= 0x20 && index < bytes.count
+            let deltaLon = ((result & 1) != 0) ? ~(result >> 1) : (result >> 1)
+            longitude += deltaLon
+            
+            let finalLat = Double(latitude) / 1e5
+            let finalLon = Double(longitude) / 1e5
+            coordinates.append(CLLocationCoordinate2D(latitude: finalLat, longitude: finalLon))
+        }
+        return coordinates
     }
 
     private func formatDistance(meters: Int) -> String {

@@ -341,6 +341,13 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     // Preferred conversation language (ISO-639-1), defaults to English
     private(set) var preferredLanguageCode: String = "en"
     
+    // Navigation announcement state
+    private var navigationSubscription: AnyCancellable?
+    private var lastNavigationAnnouncementTime: Date = .distantPast
+    private let navigationAnnouncementDebounce: TimeInterval = 5.0
+    private var lastAnnouncedInstruction: String = ""
+    private var pendingNavigationAnnouncements: [String] = []
+    
     init(apiKey: String, sessionLogger: SessionLogger? = nil) {
         self.apiKey = apiKey
         self.urlSession = URLSession.shared
@@ -348,7 +355,117 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         self.sessionLogger = sessionLogger
         super.init()
         setupAudioSession()
+        setupNavigationSubscription()
         print("🚀 OpenAI Realtime Service initialized")
+    }
+    
+    private func setupNavigationSubscription() {
+        // Subscribe to navigation events for voice announcements
+        navigationSubscription = NavigationManager.shared.navigationEventPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] event in
+                Task { @MainActor in
+                    await self?.handleNavigationEvent(event)
+                }
+            }
+        print("🗺️ [Navigation] Subscribed to navigation events")
+    }
+    
+    @MainActor
+    private func handleNavigationEvent(_ event: NavigationEvent) async {
+        guard let announcementText = event.announcementText else { return }
+        
+        let now = Date()
+        if announcementText == lastAnnouncedInstruction &&
+            now.timeIntervalSince(lastNavigationAnnouncementTime) < navigationAnnouncementDebounce {
+            return
+        }
+        
+        let requiresImmediateInterrupt: Bool = {
+            switch event {
+            case .arrived, .rerouting:
+                return true
+            default:
+                return false
+            }
+        }()
+        
+        if requiresImmediateInterrupt && (isAIResponding || currentResponseId != nil) {
+            print("🛑 [Navigation] Interrupting active response for urgent navigation event")
+            await cancelResponse()
+            await deliverNavigationAnnouncement(announcementText)
+            return
+        }
+        
+        if isAIResponding || currentResponseId != nil {
+            if pendingNavigationAnnouncements.last != announcementText {
+                pendingNavigationAnnouncements.append(announcementText)
+                print("🗺️ [Navigation] Queued announcement (voice busy): \(announcementText)")
+            }
+            return
+        }
+        
+        await deliverNavigationAnnouncement(announcementText)
+    }
+    
+    @MainActor
+    private func deliverNavigationAnnouncement(_ text: String) async {
+        lastNavigationAnnouncementTime = Date()
+        lastAnnouncedInstruction = text
+        
+        print("🗺️ [Navigation] Announcing: \(text)")
+        sessionLogger?.logSystemEvent("navigation_announcement", detail: text)
+        
+        await sendNavigationAnnouncementPayload(text)
+    }
+    
+    @MainActor
+    private func sendNavigationAnnouncementPayload(_ text: String) async {
+        // Create a system-style message that prompts Guido to speak the navigation instruction
+        let navigationPrompt = """
+        NAVIGATION_INSTRUCTION: \(text)
+        
+        Announce this navigation instruction naturally and briefly. Keep it concise - just the essential direction. Don't add extra commentary unless it's helpful context.
+        """
+        
+        // Send as a conversation item that triggers a response
+        let itemId = generateShortId()
+        let conversationItem: [String: Any] = [
+            "type": "conversation.item.create",
+            "event_id": generateShortId(),
+            "item": [
+                "id": itemId,
+                "type": "message",
+                "role": "user",
+                "content": [
+                    [
+                        "type": "input_text",
+                        "text": navigationPrompt
+                    ]
+                ]
+            ]
+        ]
+        
+        // Send the navigation prompt
+        if let sender = outboundEventSender,
+           let data = try? JSONSerialization.data(withJSONObject: conversationItem),
+           let json = String(data: data, encoding: .utf8) {
+            print("📤 [WebRTC] Sending navigation announcement via sender")
+            sender.sendJSONString(json)
+        } else {
+            sendOrQueueDataChannelPayload(conversationItem, description: "navigation announcement")
+        }
+        
+        // Request a response
+        await requestResponseOverDataChannel()
+    }
+    
+    @MainActor
+    private func processPendingNavigationAnnouncements() async {
+        guard !pendingNavigationAnnouncements.isEmpty else { return }
+        guard !isAIResponding, currentResponseId == nil else { return }
+        let next = pendingNavigationAnnouncements.removeFirst()
+        await deliverNavigationAnnouncement(next)
     }
     
     func setPreferredLanguageCode(_ code: String) {
@@ -684,7 +801,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     
     private func configureSessionOverDataChannel() async throws {
         // Build same payload as configureSession(), but send over data channel
-        let eventId = UUID().uuidString
+        let eventId = generateShortId()
         let vadType = VADConfig.useSemanticVAD ? "semantic_vad" : "server_vad"
         var turnDetection: [String: Any] = [
             "type": vadType,
@@ -727,7 +844,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     }
     
     private func sendLanguageUpdateOverDataChannel() async {
-        let eventId = UUID().uuidString
+        let eventId = generateShortId()
         let sessionDict: [String: Any] = [
             "input_audio_transcription": [
                 "model": "whisper-1",
@@ -748,7 +865,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     private func sendClearInputBuffer() async {
         let payload: [String: Any] = [
             "type": "input_audio_buffer.clear",
-            "event_id": UUID().uuidString
+            "event_id": generateShortId()
         ]
         let sentImmediately = sendOrQueueDataChannelPayload(payload, description: "input_audio_buffer.clear") { [weak self] in
             self?.lastClearBufferTime = Date().timeIntervalSince1970
@@ -769,7 +886,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         """
         let payload: [String: Any] = [
             "type": "response.create",
-            "event_id": UUID().uuidString,
+            "event_id": generateShortId(),
             "response": [
                 "instructions": instructions,
                 "modalities": ["audio", "text"]
@@ -792,6 +909,11 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     }
     
     // Helpers to send events over WebRTC data channel
+    private func generateShortId() -> String {
+        // OpenAI IDs must be <= 32 chars. UUID is 36.
+        return UUID().uuidString.replacingOccurrences(of: "-", with: "")
+    }
+
     private func sendEventOverDataChannel<T: Encodable>(_ event: T) async {
         let encoder = JSONEncoder()
         guard let data = try? encoder.encode(event),
@@ -872,7 +994,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     }
     
     private func requestResponseOverDataChannel() async {
-        let body: [String: Any] = ["type": "response.create", "event_id": UUID().uuidString]
+        let body: [String: Any] = ["type": "response.create", "event_id": generateShortId()]
         guard let data = try? JSONSerialization.data(withJSONObject: body),
               let json = String(data: data, encoding: .utf8) else { return }
         print("📤 [WebRTC] Sending response.create via sender: \(json)")
@@ -1198,6 +1320,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 speechStartTime = 0
                 print("🔄 [RESPONSE] Ready for next speech input")
                 
+                await processPendingNavigationAnnouncements()
+                
             case "response.cancelled":
                 let cancelTime = Date().timeIntervalSince1970
                 var cancelInfo = "unknown"
@@ -1220,6 +1344,8 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 
                 isAIResponding = false
                 conversationState = .listening  // Back to listening after cancellation
+                
+                await processPendingNavigationAnnouncements()
                 
             case "input_audio_buffer.speech_started":
                 let currentTime = Date().timeIntervalSince1970
@@ -1321,6 +1447,7 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 }
                 sessionLogger?.logResponseCreated(responseId: extractedResponseId)
                 
+                isAIResponding = true
                 conversationState = .thinking
                 // no-op metrics; play minimal feedback
                 audioFeedbackManager.playThinkingSound()
@@ -1340,6 +1467,16 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
                 
             case "rate_limits.updated":
                 print("📊 Rate limits updated")
+            
+            case "output_audio_buffer.started":
+                print("🔊 [AI_AUDIO] Output buffer started")
+            case "output_audio_buffer.stopped":
+                print("🔇 [AI_AUDIO] Output buffer stopped")
+            case "output_audio_buffer.cleared":
+                print("🔄 [AI_AUDIO] Output buffer cleared")
+                
+            case "conversation.item.truncated":
+                print("✂️ Conversation item truncated")
                 
             case "response.function_call_arguments.delta":
                 print("🔧 Function call arguments delta received")
@@ -1431,7 +1568,15 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
     
     // Removed: output_audio_buffer.clear is WebRTC-only; not supported over WebSocket
     
-    func cancelResponse() async { /* TODO: send over WebRTC data channel if needed */ }
+    func cancelResponse() async {
+        let body: [String: Any] = ["type": "response.cancel", "event_id": generateShortId()]
+        guard let data = try? JSONSerialization.data(withJSONObject: body),
+              let json = String(data: data, encoding: .utf8) else { return }
+        print("🛑 [WebRTC] Sending response.cancel: \(json)")
+        await MainActor.run { [weak self] in
+            self?.outboundEventSender?.sendJSONString(json)
+        }
+    }
     
     private func handleUserInterruption() async {
         let interruptTime = Date().timeIntervalSince1970
@@ -1593,10 +1738,19 @@ class OpenAIRealtimeService: NSObject, ObservableObject {
         if result.success {
             if toolName == "get_directions", let data = processedData as? [String: Any] {
                 let voiceMessage = data["voice_message"] as? String ?? "I just sent you directions. Please open the Google Maps link I provided."
-                let mapsURL = data["maps_url"] as? String ?? ""
+                let hasLink = (data["maps_url"] as? String)?.isEmpty == false
+                let isPreview = (data["preview_only"] as? Bool) == true
+                let actionLine: String
+                if isPreview {
+                    actionLine = "ACTION: Use this preview to tell the user the ETA and distance, then ask whether they want a Google Maps link or hands-free guidance. Do NOT open Google Maps or start navigation yet."
+                } else if hasLink {
+                    actionLine = "ACTION: Let the user know the Google Maps link we just shared has the full route. Do not read the URL aloud."
+                } else {
+                    actionLine = "ACTION: Let the user know we shared directions for them to review. Do not read any URL aloud."
+                }
                 outputString = """
 VOICE_MESSAGE: \(voiceMessage)
-ACTION: Ask the user to open the Google Maps link we just shared (\(mapsURL)). Do not provide step-by-step navigation.
+\(actionLine)
 """
             } else if let data = processedData as? String {
                 outputString = data
@@ -1616,7 +1770,7 @@ ACTION: Ask the user to open the Google Maps link we just shared (\(mapsURL)). D
         }
         
         let responseEvent = ToolResponseEvent(
-            eventId: UUID().uuidString,
+            eventId: generateShortId(),
             item: ToolResponseItem(
                 callId: callId,
                 output: outputString
@@ -1659,6 +1813,21 @@ ACTION: Ask the user to open the Google Maps link we just shared (\(mapsURL)). D
     }
 
     private func addVoiceMessage(to payload: [String: Any]) async -> [String: Any] {
+        // If this is a hands-free navigation payload (started or already active), preserve its voice message
+        if let isPreview = payload["preview_only"] as? Bool, isPreview {
+            return payload
+        }
+        if let isHandsFree = payload["navigation_started"] as? Bool, isHandsFree {
+            return payload
+        }
+        if let isAlreadyActive = payload["navigation_already_active"] as? Bool, isAlreadyActive {
+            return payload
+        }
+        if let voiceMessage = payload["voice_message"] as? String, !voiceMessage.isEmpty,
+           (payload["navigation_mode"] as? String) == "hands_free" {
+             return payload
+        }
+
         var enrichedPayload = payload
 
         let destination = (payload["destination"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1780,7 +1949,7 @@ Rules:
             
             let event = TruncateEvent(
                 type: "conversation.item.truncate",
-                event_id: UUID().uuidString,
+                event_id: generateShortId(),
                 item_id: lastAssistantMessage.id.uuidString
             )
             
@@ -1858,7 +2027,7 @@ LANGUAGE PREFERENCE (STRICT):
                 - Consider current and near-term weather via get_weather when suggesting outdoor activities or travel modes; adapt recommendations (e.g., indoor options during rain, shaded routes in heat)
                 - If a target place is closed or closing soon, suggest nearby alternatives with their operating hours and an ETA, and explain the tradeoffs briefly
                 - IMPORTANT: You have access to the user's current location through the get_user_location tool. ALWAYS call this first when you need location data. If clarification is needed, present a hypothesis based on the location data (e.g., "I see you're at [address] - shall I give you directions from there?")
-                - Confirm the traveler’s mode (walking, driving, transit, etc.) and ask what they can see directly in front of them before giving directions so you can ground orientation; think like a local guide standing beside them
+                - Confirm the traveler’s mode (walking, driving, transit, etc.). For walking-only or basic orientation (no hands-free navigation started), you may ask what they can see directly in front of them ONCE to ground orientation. When hands-free navigation is active with Google Maps, rely primarily on map data and avoid repeatedly asking orientation questions unless the user seems confused or asks for help getting oriented.
                 - When appropriate, check the user's location, nearby places, weather, and other contextual information
                 - Offer specific, actionable suggestions based on real data
                 - ALWAYS briefly acknowledge before using tools with phrases like "let me check that for you", "let me find that information", or "give me a moment to look that up" - this provides important user feedback during processing
@@ -1893,11 +2062,18 @@ LANGUAGE PREFERENCE (STRICT):
                 
                 IMPORTANT: 
                 - Engage in natural conversation flow. The system uses voice activity detection to understand when you should respond. Trust the turn-taking system and respond naturally when prompted.
-                - DIRECTIONS STYLE (STRICT):
-                  • Do NOT provide turn-by-turn or step-by-step directions in conversation.
-                  • When directions are requested, provide a brief handoff line and ETA/mode (if available), then direct the user to open the Google Maps link we provide in the UI.
-                  • Offer to find places on the way if asked. Otherwise, keep the response short and defer navigation to the Google Maps link.
+                - DIRECTIONS & NAVIGATION (STRICT):
+                  • When the user asks for directions, FIRST call get_directions with preview_only=true so you can see the ETA + distance. Then ask: "It's about <time> / <distance>. Would you like me to open Google Maps for you, or would you prefer I guide you hands-free? With hands-free, I'll announce each turn as you go - just say 'stop navigating' anytime to end."
+                  • If they want a link/map (or don't specify), use navigation_mode: "link" - provide a brief handoff line and ETA, then direct them to open the Google Maps link.
+                  • If they want hands-free/turn-by-turn/voice guidance, use navigation_mode: "hands_free" - this starts live navigation.
+                  • When hands-free navigation STARTS, clearly tell them: "I've started navigation. I'll announce turns as you go. You can chat with me normally, and just say 'stop navigating' or 'end navigation' when you're done."
+                  • During hands-free navigation: Keep turn announcements brief and natural (e.g., "In 500 feet, turn left onto Main Street"). The user can ask questions or chat anytime.
+                  • When receiving NAVIGATION_INSTRUCTION prompts, announce them naturally and concisely. Don't add extra commentary.
+                  • STOPPING NAVIGATION: Listen for phrases like "stop navigating", "end navigation", "cancel navigation", "stop directions", "I'm done", "we're here", "arrived" - then call stop_navigation tool and confirm: "Navigation ended. Let me know if you need anything else!"
                   • Avoid compass directions and arbitrary measurements; keep language concise and friendly.
+                  • If you're already guiding hands-free and the user picks a stop (coffee, gas, etc.), reroute using navigation_mode "hands_free" so they stay in live guidance. Only send a Google Maps link if they explicitly request one.
+                  • SANITY CHECK MODES: Always sanity-check that distance, time, and travel_mode match. For example, walking 4+ miles in under ~30 minutes is unrealistic. If the payload suggests an impossible speed for the requested mode (e.g., very fast walking), reinterpret it as drive-time, explain the correction briefly (\"that's by car; walking would take much longer\"), and adjust your wording so the user is not misled.
+                  • While hands-free navigation is ACTIVE, do NOT call get_directions again unless the user clearly asks to change destination or says navigation is broken. If a navigation attempt fails because navigation is already in progress, explain briefly and continue guiding with the existing route instead of retrying tools in a loop.
                 - CRITICAL AUDIO FEEDBACK PATTERN: When you need to use tools, ALWAYS follow this sequence:
                   1. First, speak an acknowledgment like "let me check that for you" or "let me look that up"
                   2. Then call your tools (ALWAYS call get_user_location first if you need location data)

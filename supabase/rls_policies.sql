@@ -151,4 +151,82 @@ create policy "Update own session recordings"
   using (user_id is null or user_id is not distinct from auth.uid())
   with check (user_id is null or user_id is not distinct from auth.uid());
 
+-- 5) Navigation journeys for turn-by-turn tracking
+create table if not exists public.navigation_journeys (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete set null,
+  user_email text, -- denormalized for easy querying
+  session_id text, -- links to session_recordings
+  
+  -- Origin
+  origin_address text,
+  origin_lat double precision,
+  origin_lng double precision,
+  
+  -- Destination
+  destination_address text not null,
+  destination_lat double precision not null,
+  destination_lng double precision not null,
+  destination_name text, -- friendly name if available
+  
+  -- Journey settings
+  travel_mode text not null default 'driving', -- driving, walking, transit, cycling
+  
+  -- Timing
+  started_at timestamptz default now(),
+  ended_at timestamptz,
+  
+  -- Status
+  completed boolean default false,
+  cancelled boolean default false,
+  
+  -- Route summary
+  total_distance_meters int,
+  total_time_seconds int,
+  initial_steps_count int,
+  
+  -- Telemetry (JSONB arrays for flexibility)
+  checkpoints jsonb default '[]'::jsonb,  -- [{step_index, instruction, road_name, maneuver, arrived_at, lat, lng}]
+  breadcrumbs jsonb default '[]'::jsonb,  -- [{lat, lng, timestamp, speed_mps, accuracy_m}]
+  
+  -- Rerouting
+  reroute_count int default 0,
+  last_reroute_at timestamptz,
+  
+  -- Metadata
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table public.navigation_journeys enable row level security;
+
+drop trigger if exists trg_navigation_journeys_updated_at on public.navigation_journeys;
+create trigger trg_navigation_journeys_updated_at
+before update on public.navigation_journeys
+for each row execute function public.set_updated_at();
+
+create index if not exists idx_navigation_journeys_user_id on public.navigation_journeys(user_id);
+create index if not exists idx_navigation_journeys_session_id on public.navigation_journeys(session_id);
+create index if not exists idx_navigation_journeys_started_at on public.navigation_journeys(started_at);
+
+-- RLS Policies for navigation_journeys
+drop policy if exists "Select own journeys" on public.navigation_journeys;
+create policy "Select own journeys"
+  on public.navigation_journeys for select
+  using (user_id is not distinct from auth.uid());
+
+drop policy if exists "Insert journeys" on public.navigation_journeys;
+create policy "Insert journeys"
+  on public.navigation_journeys for insert
+  with check (
+    user_id is null
+    or user_id is not distinct from auth.uid()
+  );
+
+drop policy if exists "Update own journeys" on public.navigation_journeys;
+create policy "Update own journeys"
+  on public.navigation_journeys for update
+  using (user_id is null or user_id is not distinct from auth.uid())
+  with check (user_id is null or user_id is not distinct from auth.uid());
+
 
