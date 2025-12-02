@@ -917,29 +917,40 @@ public class LocationMCPServer {
                 do {
                     // Use LLM to determine if we need place resolution
                     let candidates = try await google.searchText(query: destination, maxResults: 3)
-                    
+                    let uniqueCandidateNames = Set(candidates.map { $0.name.lowercased() })
+                    let isSameBusinessMultipleLocations = uniqueCandidateNames.count == 1 && candidates.count > 1
+
                     // Check for destination ambiguity before proceeding
                     if let openAIChatService = openAIChatService {
                         do {
-                            let candidatesData = candidates.map { candidate in
-                                return [
-                                    "name": candidate.name,
-                                    "address": candidate.formattedAddress,
-                                    "distance_meters": candidate.distanceMeters
-                                ]
-                            }
-                            
-                            if let clarificationQuestion = try await openAIChatService.detectAmbiguityAndAskClarification(
-                                userQuery: "Directions to \(destination)",
-                                googlePlaces: candidatesData,
-                                webSearchData: nil,
-                                locationContext: locationContext
-                            ) {
-                                print("🤔 [LocationMCPServer] Detected destination ambiguity, asking for clarification")
-                                return MCPCallToolResponse(
-                                    content: [MCPContent(text: clarificationQuestion)],
-                                    isError: false
-                                )
+                            if isSameBusinessMultipleLocations {
+                                if let name = candidates.first?.name {
+                                    print("📍 [LocationMCPServer] Multiple locations of '\(name)' found, using closest candidate")
+                                } else {
+                                    print("📍 [LocationMCPServer] Multiple same-name locations found, using closest candidate")
+                                }
+                                // Skip clarification and proceed with closest candidate
+                            } else {
+                                let candidatesData = candidates.map { candidate in
+                                    return [
+                                        "name": candidate.name,
+                                        "address": candidate.formattedAddress,
+                                        "distance_meters": candidate.distanceMeters
+                                    ]
+                                }
+
+                                if let clarificationQuestion = try await openAIChatService.detectAmbiguityAndAskClarification(
+                                    userQuery: "Directions to \(destination)",
+                                    googlePlaces: candidatesData,
+                                    webSearchData: nil,
+                                    locationContext: locationContext
+                                ) {
+                                    print("🤔 [LocationMCPServer] Detected destination ambiguity, asking for clarification")
+                                    return MCPCallToolResponse(
+                                        content: [MCPContent(text: clarificationQuestion)],
+                                        isError: false
+                                    )
+                                }
                             }
                         } catch {
                             print("⚠️ [LocationMCPServer] Destination ambiguity detection failed: \(error)")

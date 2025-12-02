@@ -1830,7 +1830,22 @@ VOICE_MESSAGE: \(voiceMessage)
 
         var enrichedPayload = payload
 
-        let destination = (payload["destination"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let destination = (payload["destination"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !destination.isEmpty else {
+            print("⚠️ [Directions] No valid destination for voice handoff, returning original payload")
+            return payload
+        }
+
+        if let clarificationText = (payload["text"] as? String)?
+            .lowercased(),
+           clarificationText.contains("could you specify") ||
+           clarificationText.contains("which one") ||
+           clarificationText.contains("would you like directions to the closest one") {
+            print("⚠️ [Directions] Clarification payload detected, skipping voice handoff enrichment")
+            return payload
+        }
+
         let modeRaw = (payload["transportation_mode"] as? String ?? "").lowercased()
         let friendlyMode: String
         switch modeRaw {
@@ -1851,7 +1866,7 @@ VOICE_MESSAGE: \(voiceMessage)
 
         let routeSteps = payload["route_steps"] as? [String] ?? []
         let destinationVoice = await makeVoiceFriendlyDestination(
-            fullAddress: destination ?? "",
+            fullAddress: destination,
             mode: friendlyMode,
             steps: routeSteps
         )
@@ -1871,11 +1886,17 @@ VOICE_MESSAGE: \(voiceMessage)
     }
 
     private func makeVoiceFriendlyDestination(fullAddress: String, mode: String, steps: [String]) async -> String {
+        let normalizedAddress = fullAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedAddress.count > 5 else {
+            print("⚠️ [Directions] Empty or unclear address, skipping voice-friendly conversion")
+            return ""
+        }
+
         // If we have recent steps, try to form cross streets using LLM; otherwise simplify address
         let prompt = """
 Convert this destination into a brief, voice-friendly phrase using cross streets when possible. Expand abbreviations naturally (e.g., Blvd -> Boulevard, Ave -> Avenue). Avoid full long addresses.
 
-Destination: \(fullAddress)
+Destination: \(normalizedAddress)
 Recent route steps (if any): \(steps.joined(separator: " | "))
 Mode: \(mode)
 
@@ -1891,12 +1912,23 @@ Rules:
             let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
             // Strip code fences if present
             let cleaned = trimmed.replacingOccurrences(of: "```", with: "")
-            // Heuristic: keep short
+
+            if let data = cleaned.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                let candidateText = (json["destination"] as? String) ?? (json["text"] as? String)
+                if let candidateText,
+                   !candidateText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    let shortened = candidateText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return String(shortened.prefix(120))
+                }
+            }
+
+            // Fallback: treat response as plain text if JSON parsing fails
             return String(cleaned.prefix(120))
         } catch {
             print("⚠️ [Directions] Voice-friendly destination generation failed: \(error)")
             // Fallback: strip city/state if present by comma split; keep first two parts
-            let parts = fullAddress.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            let parts = normalizedAddress.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
             if parts.isEmpty { return "" }
             if parts.count >= 2 { return "\(parts[0]), \(parts[1])" }
             return parts[0]
@@ -2023,6 +2055,7 @@ LANGUAGE PREFERENCE (STRICT):
                 - Be concise but informative
                 - Respond quickly and smoothly for natural conversation flow
                 - Use your tools proactively to provide personalized recommendations
+                - Before starting any potentially longer lookup (e.g., nearby place searches, web searches, menu parsing, or anything that might take more than a second), explicitly tell the traveler what you’re about to check so they know why you’re pausing
                 - When recommending places (e.g., coffee shops, restaurants, attractions), check operating hours against the current local time using get_local_time and account for estimated travel time so the user arrives while the place is open; prefer options that will be open upon arrival
                 - Consider current and near-term weather via get_weather when suggesting outdoor activities or travel modes; adapt recommendations (e.g., indoor options during rain, shaded routes in heat)
                 - If a target place is closed or closing soon, suggest nearby alternatives with their operating hours and an ETA, and explain the tradeoffs briefly
@@ -2032,6 +2065,7 @@ LANGUAGE PREFERENCE (STRICT):
                 - Offer specific, actionable suggestions based on real data
                 - ALWAYS briefly acknowledge before using tools with phrases like "let me check that for you", "let me find that information", or "give me a moment to look that up" - this provides important user feedback during processing
                 - While you are searching for places or information, talk through your reasoning in simple, human terms (e.g., "I'm looking for spots that are still open and easy to reach from where you are"), instead of silently waiting for tools to finish.
+                - If a tool call is taking longer than a moment, briefly update the user ("still checking for the closest spots…") so they never wonder whether the system stalled.
                 - Do NOT mention internal tool names (like "get_user_location" or "find_nearby_places"); describe what you are doing functionally (e.g., "I'm checking exactly where you are and what's nearby").
                 - After using tools and getting results, naturally transition into sharing the information without additional artificial completion sounds, and briefly summarize how you chose those options (for example, "these are close by, well‑reviewed, and open right now").
                 
@@ -2077,7 +2111,8 @@ LANGUAGE PREFERENCE (STRICT):
                 - CRITICAL AUDIO FEEDBACK PATTERN: When you need to use tools, ALWAYS follow this sequence:
                   1. First, speak an acknowledgment like "let me check that for you" or "let me look that up"
                   2. Then call your tools (ALWAYS call get_user_location first if you need location data)
-                  3. Finally, naturally share the results when tools complete
+                  3. If the tool is still running after ~2 seconds, provide a quick verbal status update to reassure the traveler that you are still working
+                  4. Finally, naturally share the results when tools complete
                 - NEVER ask users "where are you?" - instead, get their location automatically and present a hypothesis for confirmation if needed (e.g., "I see you're near Riverside Boulevard - is that where you'd like directions from?")
                 - INTERRUPTION AWARENESS: When a user interrupts you mid-response, acknowledge what you were doing before switching context.
                 
