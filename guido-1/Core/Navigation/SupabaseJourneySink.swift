@@ -21,7 +21,7 @@ protocol JourneySink {
 final class SupabaseJourneySink: JourneySink {
     private let baseURL: String
     private let anonKey: String
-    private let accessTokenProvider: () -> String?
+    private let accessTokenProvider: () async -> String?
     private let urlSession: URLSession
     private let maxRetries: Int
     private let encoder: JSONEncoder
@@ -34,7 +34,7 @@ final class SupabaseJourneySink: JourneySink {
     init(
         baseURL: String,
         anonKey: String,
-        accessTokenProvider: @escaping () -> String? = { nil },
+        accessTokenProvider: @escaping () async -> String? = { nil },
         urlSession: URLSession = .shared,
         maxRetries: Int = 2
     ) {
@@ -62,7 +62,7 @@ final class SupabaseJourneySink: JourneySink {
         
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        configureHeaders(&request, prefer: "return=representation")
+        await configureHeaders(&request, prefer: "return=representation")
         
         let payload = JourneyCreatePayload(journey: journey)
         request.httpBody = try encoder.encode(payload)
@@ -100,7 +100,7 @@ final class SupabaseJourneySink: JourneySink {
         
         var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
-        configureHeaders(&request, prefer: "return=minimal")
+        await configureHeaders(&request, prefer: "return=minimal")
         
         let payload = JourneyUpdatePayload(journey: journey)
         request.httpBody = try encoder.encode(payload)
@@ -130,7 +130,7 @@ final class SupabaseJourneySink: JourneySink {
         
         var request = URLRequest(url: rpcEndpoint)
         request.httpMethod = "POST"
-        configureHeaders(&request, prefer: "return=minimal")
+        await configureHeaders(&request, prefer: "return=minimal")
         
         let payload: [String: Any] = [
             "journey_id": journeyId.uuidString,
@@ -175,7 +175,7 @@ final class SupabaseJourneySink: JourneySink {
         
         var fetchRequest = URLRequest(url: fetchURL)
         fetchRequest.httpMethod = "GET"
-        configureHeaders(&fetchRequest, prefer: nil)
+        await configureHeaders(&fetchRequest, prefer: nil)
         
         let fetchData = try await send(request: fetchRequest)
         
@@ -212,7 +212,7 @@ final class SupabaseJourneySink: JourneySink {
         
         var updateRequest = URLRequest(url: updateURL)
         updateRequest.httpMethod = "PATCH"
-        configureHeaders(&updateRequest, prefer: "return=minimal")
+        await configureHeaders(&updateRequest, prefer: "return=minimal")
         
         let updatePayload = ["breadcrumbs": allBreadcrumbs]
         updateRequest.httpBody = try encoder.encode(updatePayload)
@@ -241,7 +241,7 @@ final class SupabaseJourneySink: JourneySink {
         
         var fetchRequest = URLRequest(url: fetchURL)
         fetchRequest.httpMethod = "GET"
-        configureHeaders(&fetchRequest, prefer: nil)
+        await configureHeaders(&fetchRequest, prefer: nil)
         
         let fetchData = try await send(request: fetchRequest)
         
@@ -281,7 +281,7 @@ final class SupabaseJourneySink: JourneySink {
         
         var updateRequest = URLRequest(url: updateURL)
         updateRequest.httpMethod = "PATCH"
-        configureHeaders(&updateRequest, prefer: "return=minimal")
+        await configureHeaders(&updateRequest, prefer: "return=minimal")
         
         let updatePayload = ["checkpoints": allCheckpoints]
         updateRequest.httpBody = try encoder.encode(updatePayload)
@@ -292,14 +292,14 @@ final class SupabaseJourneySink: JourneySink {
     
     // MARK: - Helpers
     
-    private func configureHeaders(_ request: inout URLRequest, prefer: String?) {
+    private func configureHeaders(_ request: inout URLRequest, prefer: String?) async {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let prefer = prefer {
             request.setValue(prefer, forHTTPHeaderField: "Prefer")
         }
         request.setValue(anonKey, forHTTPHeaderField: "apikey")
-        let bearerToken = accessTokenProvider() ?? anonKey
+        let bearerToken = await accessTokenProvider() ?? anonKey
         request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
     }
     

@@ -34,7 +34,7 @@ struct RealtimeConversationView: View {
     @State private var audioLevelAnimation = false
     
     @StateObject private var realtimeService: OpenAIRealtimeService
-    @StateObject private var locationManager = LocationManager()
+    @StateObject private var locationManager = LocationManager.shared
     @State private var sessionLogger: SessionLogger
     @State private var activeUserId: String?
     

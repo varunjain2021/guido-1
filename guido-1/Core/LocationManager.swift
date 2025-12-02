@@ -13,6 +13,8 @@ import Contacts
 
 @MainActor
 class LocationManager: NSObject, ObservableObject {
+    static let shared = LocationManager()
+    
     @Published var currentLocation: CLLocation?
     @Published var currentAddress: String?
     @Published var isLocationAuthorized = false
@@ -43,7 +45,7 @@ class LocationManager: NSObject, ObservableObject {
     private let speedCalculationWindow = 5 // number of recent locations to consider
     private let movementSpeedThreshold: Double = 1.0 // km/h to consider "moving"
     
-    override init() {
+    private override init() {
         super.init()
         setupLocationManager()
         startMovementTracking()
@@ -62,6 +64,12 @@ class LocationManager: NSObject, ObservableObject {
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
         locationManager.distanceFilter = 10 // Update every 10 meters
+        locationManager.allowsBackgroundLocationUpdates = true
+        locationManager.pausesLocationUpdatesAutomatically = false
+        if #available(iOS 11.0, *) {
+            locationManager.showsBackgroundLocationIndicator = true
+        }
+        locationManager.activityType = .otherNavigation
         
         authorizationStatus = locationManager.authorizationStatus
         updateAuthorizationState()
@@ -84,8 +92,20 @@ class LocationManager: NSObject, ObservableObject {
     
     // MARK: - Public Methods
     
-    func requestLocationPermission() {
-        locationManager.requestWhenInUseAuthorization()
+    func requestLocationPermission(always: Bool = true) {
+        guard always else {
+            locationManager.requestWhenInUseAuthorization()
+            return
+        }
+        
+        switch authorizationStatus {
+        case .notDetermined:
+            locationManager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse:
+            locationManager.requestAlwaysAuthorization()
+        default:
+            locationManager.requestAlwaysAuthorization()
+        }
     }
     
     func requestAuthorization() async -> CLAuthorizationStatus {
@@ -93,7 +113,7 @@ class LocationManager: NSObject, ObservableObject {
         if status == .notDetermined {
             return await withCheckedContinuation { continuation in
                 authorizationContinuation = continuation
-                locationManager.requestWhenInUseAuthorization()
+                locationManager.requestAlwaysAuthorization()
             }
         } else {
             return status
@@ -108,12 +128,14 @@ class LocationManager: NSObject, ObservableObject {
         
         locationManager.startUpdatingLocation()
         locationManager.startMonitoringSignificantLocationChanges()
+        locationManager.startMonitoringVisits()
         print("📍 Started location tracking")
     }
     
     func stopLocationUpdates() {
         locationManager.stopUpdatingLocation()
         locationManager.stopMonitoringSignificantLocationChanges()
+        locationManager.stopMonitoringVisits()
         print("📍 Stopped location tracking")
     }
     
@@ -420,6 +442,8 @@ extension LocationManager: CLLocationManagerDelegate {
             // Check for proactive guidance opportunities
             checkForProactiveOpportunity()
             
+            HeatmapService.shared.processLocation(location)
+            
             print("📍 Location updated: \(location.coordinate.latitude), \(location.coordinate.longitude)")
         }
     }
@@ -428,6 +452,9 @@ extension LocationManager: CLLocationManagerDelegate {
         Task { @MainActor in
             authorizationStatus = status
             updateAuthorizationState()
+            if status == .authorizedWhenInUse {
+                manager.requestAlwaysAuthorization()
+            }
             if let continuation = authorizationContinuation {
                 continuation.resume(returning: status)
                 authorizationContinuation = nil
@@ -437,6 +464,12 @@ extension LocationManager: CLLocationManagerDelegate {
     
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("❌ Location manager error: \(error)")
+    }
+    
+    nonisolated func locationManager(_ manager: CLLocationManager, didVisit visit: CLVisit) {
+        Task { @MainActor in
+            HeatmapService.shared.handleVisit(visit)
+        }
     }
     
     private func shouldUpdateNearbyPlaces(newLocation: CLLocation) -> Bool {

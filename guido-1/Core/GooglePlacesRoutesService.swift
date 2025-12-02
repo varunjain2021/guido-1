@@ -16,8 +16,25 @@ class GooglePlacesRoutesService: ObservableObject {
         public let phoneNumber: String?
         public let resourceName: String?          // Google Places resource name (e.g., "places/ChIJ...")
         public let googleMapsUri: String?         // Shareable Google Maps URL
+        public let types: [String]?
+        public let primaryType: String?
         
-        public init(name: String, formattedAddress: String, latitude: Double, longitude: Double, distanceMeters: Int, isOpen: Bool? = nil, businessStatus: String? = nil, rating: Double? = nil, userRatingCount: Int? = nil, phoneNumber: String? = nil, resourceName: String? = nil, googleMapsUri: String? = nil) {
+        public init(
+            name: String,
+            formattedAddress: String,
+            latitude: Double,
+            longitude: Double,
+            distanceMeters: Int,
+            isOpen: Bool? = nil,
+            businessStatus: String? = nil,
+            rating: Double? = nil,
+            userRatingCount: Int? = nil,
+            phoneNumber: String? = nil,
+            resourceName: String? = nil,
+            googleMapsUri: String? = nil,
+            types: [String]? = nil,
+            primaryType: String? = nil
+        ) {
             self.name = name
             self.formattedAddress = formattedAddress
             self.latitude = latitude
@@ -30,6 +47,8 @@ class GooglePlacesRoutesService: ObservableObject {
             self.phoneNumber = phoneNumber
             self.resourceName = resourceName
             self.googleMapsUri = googleMapsUri
+            self.types = types
+            self.primaryType = primaryType
         }
         
         // Helper to determine if this is a reliable business for LLM decision making
@@ -201,45 +220,65 @@ class GooglePlacesRoutesService: ObservableObject {
         let places = (json["places"] as? [[String: Any]]) ?? []
         print("📍 [GooglePlacesService] Found \(places.count) places in response")
         let candidates: [PlaceCandidate] = places.compactMap { place in
-            guard let loc = place["location"] as? [String: Any],
-                  let lat = loc["latitude"] as? Double,
-                  let lng = loc["longitude"] as? Double else { 
-                print("⚠️ [GooglePlacesService] Skipping place with invalid location data")
-                return nil 
+            let candidate = parsePlaceCandidate(place, origin: biasCenter)
+            if let candidate {
+                print("📍 [GooglePlacesService] Found: \(candidate.name) at \(candidate.formattedAddress), \(candidate.distanceMeters)m away")
             }
-            let resourceName = place["name"] as? String
-            let gmapsUri = place["googleMapsUri"] as? String
-            let nameText = ((place["displayName"] as? [String: Any])?["text"] as? String) ?? "Unknown"
-            let addr = (place["formattedAddress"] as? String) ?? ""
-            let dist = computeDistanceMeters(from: biasCenter, to: CLLocationCoordinate2D(latitude: lat, longitude: lng))
-            
-            // Extract enhanced business data for LLM intelligence
-            let isOpen = (place["currentOpeningHours"] as? [String: Any])?["openNow"] as? Bool
-            let businessStatus = place["businessStatus"] as? String
-            let rating = place["rating"] as? Double
-            let userRatingCount = place["userRatingCount"] as? Int
-            let phoneNumber = (place["nationalPhoneNumber"] as? String) ?? (place["internationalPhoneNumber"] as? String)
-            
-            print("📍 [GooglePlacesService] Found: \(nameText) at \(addr), \(dist)m away")
-            print("   - Business Status: \(businessStatus ?? "unknown"), Open: \(isOpen?.description ?? "unknown"), Rating: \(rating?.description ?? "none")")
-            
-            return PlaceCandidate(
-                name: nameText, 
-                formattedAddress: addr, 
-                latitude: lat, 
-                longitude: lng, 
-                distanceMeters: dist,
-                isOpen: isOpen,
-                businessStatus: businessStatus,
-                rating: rating,
-                userRatingCount: userRatingCount,
-                phoneNumber: phoneNumber,
-                resourceName: resourceName,
-                googleMapsUri: gmapsUri
-            )
+            return candidate
         }
         print("✅ [GooglePlacesService] Returning \(candidates.count) valid candidates")
         return candidates
+    }
+    
+    func lookupPlace(
+        at coordinate: CLLocationCoordinate2D,
+        radiusMeters: Int = 75
+    ) async throws -> PlaceCandidate? {
+        let url = URL(string: "https://places.googleapis.com/v1/places:searchNearby")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(
+            "places.displayName,places.formattedAddress,places.location,places.types,places.primaryType,places.businessStatus,places.currentOpeningHours.openNow,places.googleMapsUri,places.nationalPhoneNumber,places.internationalPhoneNumber,places.rating,places.userRatingCount,places.name",
+            forHTTPHeaderField: "X-Goog-FieldMask"
+        )
+        
+        let body: [String: Any] = [
+            "locationRestriction": [
+                "circle": [
+                    "center": [
+                        "latitude": coordinate.latitude,
+                        "longitude": coordinate.longitude
+                    ],
+                    "radius": radiusMeters
+                ]
+            ],
+            "maxResultCount": 3,
+            "rankPreference": "DISTANCE"
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (data, response) = try await session.data(for: request)
+        let responseStr = String(data: data, encoding: .utf8) ?? "No response body"
+        guard let http = response as? HTTPURLResponse else {
+            throw NSError(domain: "GooglePlacesRoutesService", code: 10, userInfo: [NSLocalizedDescriptionKey: "Invalid HTTP response"])
+        }
+        
+        guard http.statusCode == 200 else {
+            print("❌ [GooglePlacesService] lookupPlace failed \(http.statusCode): \(responseStr)")
+            throw NSError(domain: "GooglePlacesRoutesService", code: 11, userInfo: [NSLocalizedDescriptionKey: "Place lookup error (\(http.statusCode)): \(responseStr)"])
+        }
+        
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw NSError(domain: "GooglePlacesRoutesService", code: 12, userInfo: [NSLocalizedDescriptionKey: "Invalid Place lookup response"])
+        }
+        
+        guard let first = (json["places"] as? [[String: Any]])?.first else {
+            return nil
+        }
+        
+        return parsePlaceCandidate(first, origin: coordinate)
     }
     
     func buildConfirmationSummary(for candidate: PlaceCandidate) -> String {
@@ -438,6 +477,47 @@ class GooglePlacesRoutesService: ObservableObject {
             durationSeconds: durationSeconds,
             summaryText: summaryText,
             stepInstructions: tail
+        )
+    }
+    
+    private func parsePlaceCandidate(_ place: [String: Any], origin: CLLocationCoordinate2D) -> PlaceCandidate? {
+        guard let loc = place["location"] as? [String: Any],
+              let lat = loc["latitude"] as? Double,
+              let lng = loc["longitude"] as? Double else {
+            print("⚠️ [GooglePlacesService] Skipping place with invalid location data")
+            return nil
+        }
+        
+        let resourceName = place["name"] as? String
+        let gmapsUri = place["googleMapsUri"] as? String
+        let nameText = ((place["displayName"] as? [String: Any])?["text"] as? String) ?? (place["name"] as? String) ?? "Unknown"
+        let addr = (place["formattedAddress"] as? String) ?? ""
+        let dist = computeDistanceMeters(from: origin, to: CLLocationCoordinate2D(latitude: lat, longitude: lng))
+        
+        // Extract enhanced business data
+        let isOpen = (place["currentOpeningHours"] as? [String: Any])?["openNow"] as? Bool
+        let businessStatus = place["businessStatus"] as? String
+        let rating = place["rating"] as? Double
+        let userRatingCount = place["userRatingCount"] as? Int
+        let phoneNumber = (place["nationalPhoneNumber"] as? String) ?? (place["internationalPhoneNumber"] as? String)
+        let types = place["types"] as? [String]
+        let primaryType = place["primaryType"] as? String
+        
+        return PlaceCandidate(
+            name: nameText,
+            formattedAddress: addr,
+            latitude: lat,
+            longitude: lng,
+            distanceMeters: dist,
+            isOpen: isOpen,
+            businessStatus: businessStatus,
+            rating: rating,
+            userRatingCount: userRatingCount,
+            phoneNumber: phoneNumber,
+            resourceName: resourceName,
+            googleMapsUri: gmapsUri,
+            types: types,
+            primaryType: primaryType
         )
     }
     

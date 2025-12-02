@@ -71,7 +71,7 @@ class AppState: ObservableObject {
     // Services
     lazy var openAIChatService = OpenAIChatService(apiKey: openAIAPIKey)
     lazy var elevenLabsService = ElevenLabsService(apiKey: elevenLabsAPIKey)
-    lazy var locationManager = LocationManager()
+    lazy var locationManager = LocationManager.shared
     let authService: AuthService = SupabaseAuthService()
     private var profileService: SupabaseProfileService?
 
@@ -104,6 +104,24 @@ class AppState: ObservableObject {
         authService.configure(url: supabaseURL, anonKey: supabaseAnonKey)
         if let supaAuth = authService as? SupabaseAuthService {
             self.profileService = SupabaseProfileService(auth: supaAuth)
+            
+            HeatmapService.shared.configure(
+                googleAPIKey: googleAPIKey,
+                supabaseURL: supabaseURL,
+                supabaseAnonKey: supabaseAnonKey,
+                userIdProvider: { [weak self] in self?.currentUserId },
+                accessTokenProvider: {
+                    await supaAuth.currentAccessToken()
+                }
+            )
+        } else {
+            HeatmapService.shared.configure(
+                googleAPIKey: googleAPIKey,
+                supabaseURL: supabaseURL,
+                supabaseAnonKey: supabaseAnonKey,
+                userIdProvider: { [weak self] in self?.currentUserId },
+                accessTokenProvider: { nil }
+            )
         }
 
         // Read current auth status

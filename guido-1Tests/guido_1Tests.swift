@@ -16,7 +16,7 @@ struct guido_1Tests {
 
     @MainActor
     @Test func testBuildDirectionsURLs() async throws {
-        let locationManager = LocationManager()
+        let locationManager = LocationManager.shared
         let service = GooglePlacesRoutesService(apiKey: "test-key", locationManager: locationManager)
 
         let destination = "1600 Amphitheatre Parkway, Mountain View, CA"

@@ -678,7 +678,7 @@ extension Array where Element == Color {
 
 struct AdaptiveCanvas: View {
     // Environment and context
-    @StateObject private var locationManager = LocationManager()
+    @StateObject private var locationManager = LocationManager.shared
     
     // Canvas state
     @State private var currentEnvironment: CanvasEnvironment = .unknown

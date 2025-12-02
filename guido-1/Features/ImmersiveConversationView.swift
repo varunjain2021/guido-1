@@ -12,7 +12,7 @@ struct ImmersiveConversationView: View {
     @EnvironmentObject var appState: AppState
     @StateObject private var realtimeService: OpenAIRealtimeService
     @StateObject private var webrtcManager = WebRTCManager()
-    @StateObject private var locationManager = LocationManager()
+    @StateObject private var locationManager = LocationManager.shared
     @StateObject private var sessionLogger: SessionLogger
     @ObservedObject private var navigationManager = NavigationManager.shared
     
@@ -37,6 +37,7 @@ struct ImmersiveConversationView: View {
     @State private var guidoSpeaking = false
     @State private var audioLevel: Float = 0.0
     @State private var showSettings = false
+    @State private var showHeatmap = false
     
     // Theme is now managed via Settings (AppState.selectedTheme)
     
@@ -56,6 +57,8 @@ struct ImmersiveConversationView: View {
         guard !baseURL.isEmpty, !anonKey.isEmpty else {
             return ConsoleSessionLogSink()
         }
+        // Session logging currently uses anon key; if you want per-user RLS here too,
+        // thread an async accessTokenProvider like in HeatmapService.
         return SupabaseSessionLogSink(baseURL: baseURL, anonKey: anonKey)
     }
     
@@ -108,8 +111,18 @@ struct ImmersiveConversationView: View {
             // Settings bubble (top-right) when authenticated
             if appState.authStatus.isAuthenticated && !appState.onboarding.isVisible {
                 VStack {
-                    HStack {
+                    HStack(spacing: 12) {
                         Spacer()
+                        Button(action: { showHeatmap = true }) {
+                            LiquidGlassCard(intensity: 0.6, cornerRadius: 12, shadowIntensity: 0.2) {
+                                Image(systemName: "hexagon.fill")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 36, height: 36)
+                            }
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        
                         Button(action: { withAnimation(.easeInOut(duration: 0.25)) { showSettings.toggle() } }) {
                             LiquidGlassCard(intensity: showSettings ? 0.8 : 0.5, cornerRadius: 12, shadowIntensity: showSettings ? 0.3 : 0.15) {
                                 Image(systemName: showSettings ? "gearshape.fill" : "gearshape")
@@ -185,6 +198,23 @@ struct ImmersiveConversationView: View {
             }
         }
         .navigationBarHidden(true)
+        .sheet(isPresented: $showHeatmap) {
+            if #available(iOS 17.0, *) {
+                HeatmapView()
+            } else {
+                VStack(spacing: 12) {
+                    Text("Heatmap requires iOS 17 or later.")
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                    Button("Close") {
+                        showHeatmap = false
+                    }
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                }
+                .padding(24)
+            }
+        }
         // Ensure Settings never stays open underneath onboarding or across auth transitions
         .onChange(of: appState.onboarding.isVisible) { visible in
             if visible {

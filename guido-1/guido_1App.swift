@@ -12,6 +12,7 @@ import GoogleMaps
 @main
 struct guido_1App: App {
     @StateObject private var appState = AppState()
+    @Environment(\.scenePhase) private var scenePhase
     
     init() {
         // Initialize Google Maps/Navigation SDK early
@@ -32,6 +33,16 @@ struct guido_1App: App {
                     print("📱 Look for emoji-prefixed messages for app-specific logs")
                     NotificationService.shared.requestAuthorizationIfNeeded()
                 }
+        }
+        .onChange(of: scenePhase) { newPhase in
+            switch newPhase {
+            case .background:
+                HeatmapService.shared.flushActiveVisit(reason: "scene-background")
+            case .inactive:
+                HeatmapService.shared.flushActiveVisit(reason: "scene-inactive")
+            default:
+                break
+            }
         }
     }
     

@@ -10,6 +10,7 @@ struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     var onClose: () -> Void = {}
     var onHelp: () -> Void = {}
+    @State private var isHeatmapTrackingEnabled: Bool = HeatmapService.shared.isTrackingEnabled
     
     var body: some View {
         ZStack {
@@ -117,6 +118,29 @@ struct SettingsView: View {
                         }
                         
                         Divider().opacity(0.3)
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Background heatmap")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(.tertiaryLabel))
+                            
+                            Toggle(isOn: $isHeatmapTrackingEnabled) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Log places automatically")
+                                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                                        .foregroundColor(Color(.secondaryLabel))
+                                    Text("Allows Guido to keep recording the places you linger so the heatmap stays fresh. Turn off to pause tracking.")
+                                        .font(.system(size: 12, weight: .regular, design: .rounded))
+                                        .foregroundColor(Color(.tertiaryLabel))
+                                }
+                            }
+                            .toggleStyle(SwitchToggleStyle(tint: .blue))
+                            .onChange(of: isHeatmapTrackingEnabled) { enabled in
+                                HeatmapService.shared.setTrackingEnabled(enabled)
+                            }
+                        }
+                        
+                        Divider().opacity(0.3)
                         Button(action: {
                             onClose()
                             onHelp()
@@ -133,37 +157,6 @@ struct SettingsView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(PlainButtonStyle())
-                        
-                        Divider().opacity(0.3)
-                        
-                        // Developer Tools
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Developer")
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                .foregroundColor(Color(.tertiaryLabel))
-                            
-                            Button(action: {
-                                Task {
-                                    let location = appState.locationManager.currentLocation
-                                    let coord = location.map { CLLocationCoordinate2D(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
-                                    _ = await runNavigationSDKSmokeTest(apiKey: appState.googleAPIKey, currentLocation: coord)
-                                }
-                            }) {
-                                HStack {
-                                    Image(systemName: "map.fill")
-                                        .foregroundColor(.blue)
-                                    Text("Test Navigation SDK")
-                                        .font(.system(size: 15, weight: .medium, design: .rounded))
-                                        .foregroundColor(Color(.secondaryLabel))
-                                    Spacer()
-                                    Image(systemName: "play.circle")
-                                        .foregroundColor(.blue)
-                                }
-                                .padding(.vertical, 6)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                        }
                         
                         Divider().opacity(0.3)
                         Button(action: { Task { await appState.signOut() } }) {
@@ -188,6 +181,9 @@ struct SettingsView: View {
             }
             .padding(.top, 60)
             .padding(.bottom, 40)
+        }
+        .onAppear {
+            isHeatmapTrackingEnabled = HeatmapService.shared.isTrackingEnabled
         }
     }
 }

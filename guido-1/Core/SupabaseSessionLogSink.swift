@@ -34,7 +34,7 @@ private struct SupabaseSessionPayload: Encodable {
 final class SupabaseSessionLogSink: SessionLogSink {
     private let endpoint: URL?
     private let anonKey: String
-    private let accessTokenProvider: () -> String?
+    private let accessTokenProvider: () async -> String?
     private let urlSession: URLSession
     private let maxRetries: Int
     private let encoder: JSONEncoder
@@ -42,7 +42,7 @@ final class SupabaseSessionLogSink: SessionLogSink {
     init(
         baseURL: String,
         anonKey: String,
-        accessTokenProvider: @escaping () -> String? = { nil },
+        accessTokenProvider: @escaping () async -> String? = { nil },
         urlSession: URLSession = .shared,
         maxRetries: Int = 2
     ) {
@@ -66,7 +66,7 @@ final class SupabaseSessionLogSink: SessionLogSink {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
         request.setValue(anonKey, forHTTPHeaderField: "apikey")
-        let bearerToken = accessTokenProvider() ?? anonKey
+        let bearerToken = await accessTokenProvider() ?? anonKey
         request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
         request.httpBody = try encoder.encode(SupabaseSessionPayload(recording: recording))
         

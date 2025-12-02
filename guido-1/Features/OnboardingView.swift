@@ -620,6 +620,7 @@ struct OnboardingCardsView: View {
             }
         default:
             Task {
+                locationManager.requestLocationPermission(always: true)
                 let status = await locationManager.requestAuthorization()
                 await MainActor.run {
                     withAnimation(.easeInOut(duration: 0.2)) {

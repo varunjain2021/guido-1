@@ -44,6 +44,7 @@ protocol AuthService {
     func signInWithGoogle() async throws
     func signOut() async throws
     func handleOpenURL(_ url: URL) async
+    func currentAccessToken() async -> String?
 }
 
 final class SupabaseAuthService: AuthService {
@@ -159,6 +160,17 @@ final class SupabaseAuthService: AuthService {
             // Ignore; keep prior status
         }
         #endif
+    }
+    
+    func currentAccessToken() async -> String? {
+        #if canImport(Supabase)
+        if let client = try? buildClient() {
+            if let session = try? await client.auth.session {
+                return session.accessToken
+            }
+        }
+        #endif
+        return nil
     }
 
     // MARK: - Private

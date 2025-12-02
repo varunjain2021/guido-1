@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		A55C0A1ECD91D1DC28C4D1A9 /* Pods_guido_1Tests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2F02A2AABBBF0F950A622CD5 /* Pods_guido_1Tests.framework */; };
 		AADA7721B01B4C3C182EA27C /* Pods_guido_1_guido_1UITests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 275F5B9FE2D897C8397303CA /* Pods_guido_1_guido_1UITests.framework */; };
+		D4900D3B2EDB97C300A902CD /* SwiftyH3 in Frameworks */ = {isa = PBXBuildFile; productRef = D4900D3A2EDB97C300A902CD /* SwiftyH3 */; };
 		D49E17F62ED95B58002B582E /* GoogleNavigation in Frameworks */ = {isa = PBXBuildFile; productRef = D49E17F52ED95B58002B582E /* GoogleNavigation */; };
 		D4BDD3252E6397D40011C418 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = D4BDD3242E6397D40011C418 /* Auth */; };
 		D4BDD3272E6397D40011C418 /* Functions in Frameworks */ = {isa = PBXBuildFile; productRef = D4BDD3262E6397D40011C418 /* Functions */; };
@@ -104,6 +105,7 @@
 				D49E17F62ED95B58002B582E /* GoogleNavigation in Frameworks */,
 				E49A9E3D4C746030800DECC7 /* Pods_guido_1.framework in Frameworks */,
 				D4BDD3312E639A470011C418 /* Auth in Frameworks */,
+				D4900D3B2EDB97C300A902CD /* SwiftyH3 in Frameworks */,
 				D4BDD32D2E6397D40011C418 /* Storage in Frameworks */,
 				D4BDD3272E6397D40011C418 /* Functions in Frameworks */,
 				D4BDD32F2E639A060011C418 /* Supabase in Frameworks */,
@@ -283,6 +285,7 @@
 			packageReferences = (
 				D4BDD3232E6397D40011C418 /* XCRemoteSwiftPackageReference "supabase-swift" */,
 				D49E17F42ED95B58002B582E /* XCRemoteSwiftPackageReference "ios-navigation-sdk" */,
+				D4900D392EDB97C300A902CD /* XCRemoteSwiftPackageReference "SwiftyH3" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D47B0FEB2E35DB7B0076F1FF /* Products */;
@@ -776,6 +779,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		D4900D392EDB97C300A902CD /* XCRemoteSwiftPackageReference "SwiftyH3" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pawelmajcher/SwiftyH3.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.5.0;
+			};
+		};
 		D49E17F42ED95B58002B582E /* XCRemoteSwiftPackageReference "ios-navigation-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/googlemaps/ios-navigation-sdk";
@@ -795,6 +806,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		D4900D3A2EDB97C300A902CD /* SwiftyH3 */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4900D392EDB97C300A902CD /* XCRemoteSwiftPackageReference "SwiftyH3" */;
+			productName = SwiftyH3;
+		};
 		D49E17F52ED95B58002B582E /* GoogleNavigation */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = D49E17F42ED95B58002B582E /* XCRemoteSwiftPackageReference "ios-navigation-sdk" */;

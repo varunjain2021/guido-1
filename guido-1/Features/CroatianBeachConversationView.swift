@@ -21,7 +21,7 @@ struct ResultItem: Identifiable {
 /// Clean, Croatian beach-themed conversation interface
 struct CroatianBeachConversationView: View {
     @StateObject private var realtimeService: OpenAIRealtimeService
-    @StateObject private var locationManager = LocationManager()
+    @StateObject private var locationManager = LocationManager.shared
     
     @State private var currentResults: [ResultItem] = []
     @State private var showResultsPane: Bool = false
