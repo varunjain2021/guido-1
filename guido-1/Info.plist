@@ -19,6 +19,11 @@
 	<array>
 		<string>audio</string>
 		<string>location</string>
+		<string>fetch</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.guido.notificationCopyRefresh</string>
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Guido uses your location to provide relevant local recommendations and suggestions based on where you are.</string>

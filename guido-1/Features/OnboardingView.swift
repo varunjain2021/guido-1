@@ -11,7 +11,7 @@ struct OnboardingCardsView: View {
     @EnvironmentObject private var appState: AppState
     @ObservedObject private var onboarding: OnboardingController
     @ObservedObject private var locationManager: LocationManager
-    @ObservedObject private var notificationService: NotificationService
+    @ObservedObject private var notificationScheduler: NotificationScheduler
     
     @State private var selection: Int = 0
     @State private var selectedCapability: Capability?
@@ -26,13 +26,13 @@ struct OnboardingCardsView: View {
     init(
         onboarding: OnboardingController,
         locationManager: LocationManager,
-        notificationService: NotificationService = .shared
+        notificationScheduler: NotificationScheduler = .shared
     ) {
         self._onboarding = ObservedObject(initialValue: onboarding)
         self._locationManager = ObservedObject(initialValue: locationManager)
-        self._notificationService = ObservedObject(initialValue: notificationService)
+        self._notificationScheduler = ObservedObject(initialValue: notificationScheduler)
         _locationStatus = State(initialValue: locationManager.authorizationStatus)
-        _notificationStatus = State(initialValue: notificationService.authorizationStatus)
+        _notificationStatus = State(initialValue: notificationScheduler.authorizationStatus)
     }
     
     var body: some View {
@@ -72,7 +72,7 @@ struct OnboardingCardsView: View {
         .onReceive(locationManager.$authorizationStatus) { status in
             locationStatus = status
         }
-        .onReceive(notificationService.$authorizationStatus) { status in
+        .onReceive(notificationScheduler.$authorizationStatus) { status in
             notificationStatus = status
         }
     }
@@ -605,10 +605,10 @@ struct OnboardingCardsView: View {
 
     private func updatePermissionStates() async {
         let locationResult = await locationManager.requestAuthorization()
-        await notificationService.refreshAuthorizationStatus()
+        await notificationScheduler.refreshAuthorizationStatus()
         await MainActor.run {
             locationStatus = locationResult
-            notificationStatus = notificationService.authorizationStatus
+            notificationStatus = notificationScheduler.authorizationStatus
         }
     }
     
@@ -633,11 +633,11 @@ struct OnboardingCardsView: View {
     
     private func requestNotificationAuthorization() {
         if notificationStatus == .denied {
-            notificationService.openSystemSettings()
+            notificationScheduler.openSystemSettings()
             return
         }
         Task {
-            let status = await notificationService.requestAuthorization()
+            let status = await notificationScheduler.requestAuthorization()
             await MainActor.run {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     notificationStatus = status

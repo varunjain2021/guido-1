@@ -179,7 +179,7 @@ struct ImmersiveConversationView: View {
                 OnboardingCardsView(
                     onboarding: appState.onboarding,
                     locationManager: appState.locationManager,
-                    notificationService: NotificationService.shared
+                    notificationScheduler: NotificationScheduler.shared
                 )
                 .environmentObject(appState)
                 .transition(.opacity)
@@ -596,8 +596,8 @@ struct ImmersiveConversationView: View {
             
             // If app is not active (e.g., phone locked), also send a notification with the link
             if UIApplication.shared.applicationState != .active {
-                NotificationService.shared.requestAuthorizationIfNeeded()
-                NotificationService.shared.sendDirectionsNotification(
+                NotificationScheduler.shared.requestAuthorizationIfNeeded()
+                NotificationScheduler.shared.sendDirectionsNotification(
                     destination: destination,
                     summary: summary,
                     mapsURL: appURL ?? webURL

@@ -455,6 +455,7 @@ extension LocationManager: CLLocationManagerDelegate {
             if status == .authorizedWhenInUse {
                 manager.requestAlwaysAuthorization()
             }
+            NotificationScheduler.shared.refreshConditionalCampaigns()
             if let continuation = authorizationContinuation {
                 continuation.resume(returning: status)
                 authorizationContinuation = nil
